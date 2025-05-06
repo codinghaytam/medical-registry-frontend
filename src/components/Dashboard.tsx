@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Box, 
   Grid, 
@@ -14,7 +15,16 @@ import {
   ListItemAvatar,
   ListItemText,
   IconButton,
-  useTheme
+  useTheme,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  TablePagination,
+  CircularProgress
 } from '@mui/material';
 import { 
   TrendingUp, 
@@ -24,7 +34,8 @@ import {
   MoreVertical, 
   ArrowUpRight,
   ArrowDownRight,
-  ChevronRight
+  ChevronRight,
+  User
 } from 'lucide-react';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import {
@@ -42,6 +53,9 @@ import {
 import Profile from './Profile';
 import RoleBasedAccess from '../utiles/RoleBasedAccess';
 import { getUserRole, canEdit } from '../utiles/RoleAccess';
+import { consultationService } from '../services/consultationService';
+import { patientService } from '../services/patientService';
+import RoleDebugInfo from './RoleDebugInfo';
 
 // Register ChartJS components
 ChartJS.register(
@@ -58,7 +72,72 @@ ChartJS.register(
 
 const Dashboard: React.FC = () => {
   const theme = useTheme();
+  const navigate = useNavigate();
   const userRole = getUserRole();
+  const [medecinPatients, setMedecinPatients] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(5);
+
+  useEffect(() => {
+    // Only fetch patients if the user is a medecin
+    if (userRole === 'MEDECIN') {
+      fetchMedecinPatients();
+    }
+  }, [userRole]);
+
+  const fetchMedecinPatients = async () => {
+    setIsLoading(true);
+    try {
+      // Get the medecin ID from localStorage
+      const medecinId = JSON.parse(localStorage.getItem('user') || '{}').id;
+      
+      if (!medecinId) {
+        console.error('Medecin ID not found in local storage');
+        return;
+      }
+
+      // Fetch all consultations
+      const consultations = await consultationService.getAll();
+      
+      // Filter consultations by medecin ID
+      const medecinConsultations = consultations.filter(
+        (consultation: any) => consultation.medecinId === medecinId
+      );
+      
+      // Extract unique patient IDs from consultations
+      const patientIds = new Set(
+        medecinConsultations.map((consultation: any) => consultation.patientId)
+      );
+      
+      // Fetch all patients
+      const allPatients = await patientService.getAll();
+      
+      // Filter patients by ID
+      const filteredPatients = allPatients.filter(
+        (patient: any) => patientIds.has(patient.id)
+      );
+      
+      setMedecinPatients(filteredPatients);
+    } catch (error) {
+      console.error('Error fetching medecin patients:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRowClick = (patientId: string) => {
+    navigate(`/patients/${patientId}`);
+  };
+
+  const handleChangePage = (_event: unknown, newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
 
   return (
     <Box sx={{ flexGrow: 1, p: 3 }}>
@@ -71,7 +150,28 @@ const Dashboard: React.FC = () => {
       <Card sx={{ mb: 4, bgcolor: theme.palette.primary.light + '20' }}>
         <CardContent>
           <Typography variant="h6">
-            Welcome, {userRole}
+            Welcome, {(() => {
+              // Get user data from localStorage
+              const userData = JSON.parse(localStorage.getItem('user') || '{}');
+              
+              // Format the name based on user role
+              let displayName = '';
+              
+              if (userRole === 'MEDECIN' && userData.user?.user?.name) {
+                displayName = `Dr. ${userData.user.name}`;
+              } else if (userRole === 'MEDECIN' && userData.user?.profession) {
+                displayName = `${userRole} (${userData.user.profession})`;
+              } else if (userRole === 'ETUDIANT' && userData.user?.name) {
+                displayName = userData.user.name;
+              } else if (userRole === 'ADMIN' && userData.name) {
+                // Admin data is stored directly, not nested in user property
+                displayName = userData.name;
+              } else {
+                displayName = userRole;
+              }
+              
+              return displayName;
+            })()}
           </Typography>
           <Typography variant="body2">
             {userRole === 'ADMIN' && "You have full access to all features."}
@@ -82,151 +182,6 @@ const Dashboard: React.FC = () => {
       </Card>
       
       {/* Stats Cards */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Box>
-                  <Typography color="text.secondary" variant="body2">
-                    Total Revenue
-                  </Typography>
-                  <Typography variant="h5" sx={{ fontWeight: 'bold', my: 1 }}>
-                    $24,532
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <ArrowUpRight size={16} color={theme.palette.success.main} />
-                    <Typography variant="caption" color="success.main" sx={{ ml: 0.5 }}>
-                      +12.5%
-                    </Typography>
-                  </Box>
-                </Box>
-                <Avatar sx={{ bgcolor: theme.palette.primary.light + '20', p: 1 }}>
-                  <DollarSign size={24} color={theme.palette.primary.main} />
-                </Avatar>
-              </Box>
-              
-              {/* Admin/Medecin only actions */}
-              <RoleBasedAccess requiredRoles={['ADMIN', 'MEDECIN']}>
-                <Box sx={{ mt: 2 }}>
-                  <Button 
-                    variant="outlined" 
-                    size="small" 
-                    fullWidth
-                  >
-                    View Details
-                  </Button>
-                </Box>
-              </RoleBasedAccess>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Box>
-                  <Typography color="text.secondary" variant="body2">
-                    Total Orders
-                  </Typography>
-                  <Typography variant="h5" sx={{ fontWeight: 'bold', my: 1 }}>
-                    1,243
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <ArrowUpRight size={16} color={theme.palette.success.main} />
-                    <Typography variant="caption" color="success.main" sx={{ ml: 0.5 }}>
-                      +8.3%
-                    </Typography>
-                  </Box>
-                </Box>
-                <Avatar sx={{ bgcolor: theme.palette.secondary.light + '20', p: 1 }}>
-                  <ShoppingCart size={24} color={theme.palette.secondary.main} />
-                </Avatar>
-              </Box>
-              
-              {/* Admin/Medecin only actions */}
-              <RoleBasedAccess requiredRoles={['ADMIN', 'MEDECIN']}>
-                <Box sx={{ mt: 2 }}>
-                  <Button 
-                    variant="outlined" 
-                    size="small" 
-                    fullWidth
-                  >
-                    Manage Orders
-                  </Button>
-                </Box>
-              </RoleBasedAccess>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Box>
-                  <Typography color="text.secondary" variant="body2">
-                    Total Customers
-                  </Typography>
-                  <Typography variant="h5" sx={{ fontWeight: 'bold', my: 1 }}>
-                    3,582
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <ArrowUpRight size={16} color={theme.palette.success.main} />
-                    <Typography variant="caption" color="success.main" sx={{ ml: 0.5 }}>
-                      +5.7%
-                    </Typography>
-                  </Box>
-                </Box>
-                <Avatar sx={{ bgcolor: theme.palette.info.light + '20', p: 1 }}>
-                  <Users size={24} color={theme.palette.info.main} />
-                </Avatar>
-              </Box>
-              
-              {/* Admin only actions */}
-              <RoleBasedAccess requiredRoles="ADMIN">
-                <Box sx={{ mt: 2 }}>
-                  <Button 
-                    variant="contained" 
-                    size="small" 
-                    fullWidth
-                    color="primary"
-                  >
-                    Add New
-                  </Button>
-                </Box>
-              </RoleBasedAccess>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <Box>
-                  <Typography color="text.secondary" variant="body2">
-                    Growth Rate
-                  </Typography>
-                  <Typography variant="h5" sx={{ fontWeight: 'bold', my: 1 }}>
-                    +18.3%
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <ArrowDownRight size={16} color={theme.palette.error.main} />
-                    <Typography variant="caption" color="error.main" sx={{ ml: 0.5 }}>
-                      -2.1%
-                    </Typography>
-                  </Box>
-                </Box>
-                <Avatar sx={{ bgcolor: theme.palette.success.light + '20', p: 1 }}>
-                  <TrendingUp size={24} color={theme.palette.success.main} />
-                </Avatar>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
       
       {/* Admin-only section */}
       <RoleBasedAccess requiredRoles="ADMIN">
@@ -249,6 +204,89 @@ const Dashboard: React.FC = () => {
               </Button>
             </Grid>
           </Grid>
+        </Box>
+      </RoleBasedAccess>
+
+      {/* Role Debug Information - temporary for troubleshooting */}
+      <RoleBasedAccess requiredRoles="ADMIN">
+        <RoleDebugInfo />
+      </RoleBasedAccess>
+
+      {/* Medecin-only patients section */}
+      <RoleBasedAccess requiredRoles="MEDECIN">
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="h5" sx={{ mb: 2 }}>Your Patients</Typography>
+          
+          {isLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <Card>
+              <TableContainer component={Paper} elevation={0}>
+                <Table sx={{ minWidth: 650 }}>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell></TableCell>
+                      <TableCell>Num dossier</TableCell>
+                      <TableCell>Nom</TableCell>
+                      <TableCell>Prénom</TableCell>
+                      <TableCell>Adresse</TableCell>
+                      <TableCell>Téléphone</TableCell>
+                      <TableCell>Motif de Consultation</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {medecinPatients.length > 0 ? (
+                      medecinPatients
+                        .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                        .map((patient) => (
+                          <TableRow
+                            key={patient.id}
+                            onClick={() => handleRowClick(patient.id)}
+                            sx={{ 
+                              '&:last-child td, &:last-child th': { border: 0 },
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <TableCell>
+                              <User size={14} style={{ marginRight: 8 }} />
+                            </TableCell>
+                            <TableCell>{patient.numeroDeDossier}</TableCell>
+                            <TableCell>{patient.nom}</TableCell>
+                            <TableCell>{patient.prenom}</TableCell>
+                            <TableCell>{patient.adresse}</TableCell>
+                            <TableCell>{patient.tel}</TableCell>
+                            <TableCell>
+                              {patient.motifConsultation?.toLowerCase().replace(/_/g, ' ')}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={7} align="center">
+                          <Typography variant="body1" sx={{ py: 2 }}>
+                            You don't have any patients yet.
+                          </Typography>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              {medecinPatients.length > 0 && (
+                <TablePagination
+                  rowsPerPageOptions={[5, 10, 25]}
+                  component="div"
+                  count={medecinPatients.length}
+                  rowsPerPage={rowsPerPage}
+                  page={page}
+                  onPageChange={handleChangePage}
+                  onRowsPerPageChange={handleChangeRowsPerPage}
+                />
+              )}
+            </Card>
+          )}
         </Box>
       </RoleBasedAccess>
     </Box>

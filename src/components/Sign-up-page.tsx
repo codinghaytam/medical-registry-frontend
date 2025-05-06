@@ -1,6 +1,5 @@
-import { Button, TextField, Box, Typography, Container, CircularProgress, Alert } from '@mui/material';
+import { Button, TextField, Box, Typography, Container, CircularProgress, Alert, Link } from '@mui/material';
 import { fetch } from '@tauri-apps/plugin-http';
-import { da } from 'date-fns/locale';
 import { useState, FormEvent } from 'react';
 
 type KeycloakResponse = {
@@ -9,24 +8,21 @@ type KeycloakResponse = {
   // ...other fields remain the same but aren't used directly
 }
 
-
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  // The client auth was automatically running on page load, which isn't ideal for role handling
+  // Now we only authenticate when user explicitly submits credentials
+  const handleUserLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    event.persist();
-    setLoading(true);  // Set loading to true when starting
+    setLoading(true);
     setError(null);
-
-    console.log("=== SUBMIT STARTED ===");  // This should always log
 
     const formData = new FormData(event.currentTarget);
     const email = formData.get('email') as string;
     const password = formData.get('password') as string;
     
-
     const myHeaders = new Headers();
     myHeaders.append("Content-Type", "application/x-www-form-urlencoded");
 
@@ -38,54 +34,128 @@ export default function LoginPage() {
     urlencoded.append("password", password);
     urlencoded.append("client_secret", "yMPWLw3KpQse36zns4HwHdS571Vz3z6W");
 
-    console.log("About to fetch...");  // Log before fetch
-
     try {
-      console.log("Fetch starting...");  // This should log
       const response = await fetch("http://localhost:9090/realms/myRealm/protocol/openid-connect/token", {
         method: "POST",
         headers: myHeaders,
         body: urlencoded.toString(),
         redirect: "follow" as RequestRedirect,
       });
-      console.log("Fetch completed, status:", response.status);  // This should log if fetch completes
 
       if (!response.ok) {
         throw new Error(`Invalid credentials: ${response.status}`);
       }
       
+      const rawText = await response.text();
+      const data = JSON.parse(rawText);
+      
+      localStorage.setItem('access_token', data.access_token);
+      localStorage.setItem('refresh_token', data.refresh_token);
+      
+      // First, check user type/role from a central endpoint
       try {
-        // Try with timeout to see if it's permanently hanging
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error("Response text timeout after 5 seconds")), 100000);
+        const userResponse = await fetch("http://localhost:3000/users/email/" + email, {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${data.access_token}`
+          }
         });
         
-        // Race between the text() call and the timeout
-        const rawText = await Promise.race([
-          response.text(),
-          timeoutPromise
-        ]) as string;
+        if (!userResponse.ok) {
+          throw new Error("Failed to fetch user information");
+        }
         
-        // Manually parse JSON
-        const data = JSON.parse(rawText);
+        const userData = await userResponse.json();
+        const userRole = userData.role;
         
-        // Now you can use the data
-        localStorage.setItem('access_token', data.access_token);
-        localStorage.setItem('refresh_token', data.refresh_token);
-        const MedecinData=await (await fetch("http://localhost:3000/medecin/email/" + email,{method:"GET"})).json()
-        localStorage.setItem("user",JSON.stringify(MedecinData))
-        // Redirect or update app state here
-        window.location.href="http://localhost:1420/"
-      } catch (parseError) {
-        console.error("Error in response handling:", parseError);
-        setError("Failed to process server response");
+        // Fetch specific user data based on role
+        if (userRole === "MEDECIN") {
+          const medecinResponse = await fetch("http://localhost:3000/medecin/email/" + email, {method:"GET"});
+          if (medecinResponse.ok) {
+            const medecinData = await medecinResponse.json();
+            // Store with proper structure to avoid "user.role" undefined error
+            localStorage.setItem("user", JSON.stringify({ 
+              user: { ...medecinData, role: "MEDECIN" } 
+            }));
+            window.location.href = "http://localhost:1420/";
+            return;
+          }
+        } 
+        else if (userRole === "ETUDIANT") {
+          const etudiantResponse = await fetch("http://localhost:3000/etudiant/email/" + email, {method:"GET"});
+          if (etudiantResponse.ok) {
+            const etudiantData = await etudiantResponse.json();
+            localStorage.setItem("user", JSON.stringify({ 
+              user: { ...etudiantData, role: "ETUDIANT" } 
+            }));
+            window.location.href = "http://localhost:1420/";
+            return;
+          }
+        } 
+        else if (userRole === "ADMIN") {
+          const adminResponse = await fetch("http://localhost:3000/admin/email/" + email, {method:"GET"});
+          if (adminResponse.ok) {
+            const adminData = await adminResponse.json();
+            localStorage.setItem("user", JSON.stringify({ 
+              user: { ...adminData, role: "ADMIN" } 
+            }));
+            window.location.href = "http://localhost:1420/";
+            return;
+          }
+        } 
+        else {
+          throw new Error("Unknown user role");
+        }
+      } catch (e) {
+        console.error("Error determining user role:", e);
+        
+        // Fallback to the previous approach if the central endpoint fails
+        try {
+          // Try to fetch user data based on email - this might be a medecin
+          const medecinData = await (await fetch("http://localhost:3000/medecin/email/" + email, {method:"GET"})).json();
+          if (medecinData) {
+            localStorage.setItem("user", JSON.stringify({ 
+              user: { ...medecinData, role: "MEDECIN" } 
+            }));
+            window.location.href = "http://localhost:1420/";
+            return;
+          }
+        } catch (e) {
+          console.log("Not a medecin user, trying other roles...");
+        }
+        
+        try {
+          const etudiantData = await (await fetch("http://localhost:3000/etudiant/email/" + email, {method:"GET"})).json();
+          if (etudiantData) {
+            localStorage.setItem("user", JSON.stringify({ 
+              user: { ...etudiantData, role: "ETUDIANT" } 
+            }));
+            window.location.href = "http://localhost:1420/";
+            return;
+          }
+        } catch (e) {
+          console.log("Not an etudiant user, trying admin...");
+        }
+        
+        try {
+          const adminData = await (await fetch("http://localhost:3000/admin/email/" + email, {method:"GET"})).json();
+          if (adminData) {
+            localStorage.setItem("user", JSON.stringify({ 
+              user: { ...adminData, role: "ADMIN" } 
+            }));
+            window.location.href = "http://localhost:1420/";
+            return;
+          }
+        } catch (e) {
+          console.log("Could not determine user role");
+          setError("User role could not be determined");
+        }
       }
     } catch (err) {
       console.error("Request error:", err);
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {
       setLoading(false);
-      console.log("=== SUBMIT ENDED ===");  // This should always log
     }
   };
 
@@ -107,55 +177,66 @@ export default function LoginPage() {
         boxShadow: 3,
         bgcolor: 'background.paper'
       }}>
-        <Typography component="h1" variant="h5" gutterBottom>
-          Sign in
-        </Typography>
-        
-        {error && (
-          <Alert severity="error" sx={{ width: '100%', mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-
-        <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
-          <TextField
-            margin="normal"
-            required
-            fullWidth
-            id="email"
-            label="Email Address"
-            name="email"
-            autoComplete="email"
-            autoFocus
-            disabled={loading}
-          />
-          <TextField
-            margin="normal"
-            required
-            fullWidth
-            name="password"
-            label="Password"
-            type="password"
-            id="password"
-            autoComplete="current-password"
-            disabled={loading}
-          />
-          
-          <Button
-            type="submit"
-            fullWidth
-            variant="contained"
-            sx={{ mt: 3, mb: 2, height: 48 }}
-            disabled={loading}
-          >
-            {loading ? (
-              <CircularProgress size={24} color="inherit" />
-            ) : (
-              'Sign In'
+        {loading ? (
+          <>
+            <Typography component="h1" variant="h5" gutterBottom>
+              Authenticating...
+            </Typography>
+            <CircularProgress size={40} sx={{ my: 4 }} />
+          </>
+        ) : (
+          <>
+            <Typography component="h1" variant="h5" gutterBottom>
+              {error ? 'Authentication failed' : 'Sign in'}
+            </Typography>
+            
+            {error && (
+              <Alert severity="error" sx={{ width: '100%', mb: 2 }}>
+                {error}
+              </Alert>
             )}
-          </Button>
-        </Box>
-        
+
+            <Box component="form" onSubmit={handleUserLogin} sx={{ width: '100%' }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Use your credentials to sign in
+              </Typography>
+              <TextField
+                margin="normal"
+                required
+                fullWidth
+                id="email"
+                label="Email Address"
+                name="email"
+                autoComplete="email"
+                autoFocus
+              />
+              <TextField
+                margin="normal"
+                required
+                fullWidth
+                name="password"
+                label="Password"
+                type="password"
+                id="password"
+                autoComplete="current-password"
+              />
+              
+              <Button
+                type="submit"
+                fullWidth
+                variant="contained"
+                sx={{ mt: 3, mb: 2, height: 48 }}
+                disabled={loading}
+              >
+                {loading ? (
+                  <CircularProgress size={24} color="inherit" />
+                ) : (
+                  'Sign In'
+                )}
+              </Button>
+            </Box>
+          </>
+        )}
       </Box>
     </Container>
   );

@@ -67,9 +67,54 @@ const Header: React.FC<HeaderProps> = ({ handleDrawerToggle }) => {
           <Box sx={{ ml: 2, display: 'flex', alignItems: 'center' }}>
             
             <Box sx={{ ml: 1, display: { xs: 'none', sm: 'block' } }}>
-              <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{JSON.parse(localStorage.getItem("user") || "").user.name}</Typography>
-              <Typography variant="caption" color="text.secondary">MEDECIN {JSON.parse(localStorage.getItem("user") || "").profession}</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                {(() => {
+                  const userData = JSON.parse(localStorage.getItem("user") || "{}");
+                  let userRole;
+                  if (JSON.parse(localStorage.getItem("user") as string)?.user!=null)
+                  {
+                    userRole = JSON.parse(localStorage.getItem("user") as string)?.user.role;
+                  }else
+                  {
+                    userRole = JSON.parse(localStorage.getItem("user") as string)?.role;
+
+                  }
+                  console.log(userData.user.name)
+                  // Format the display name based on role
+                  if (userRole === 'MEDECIN' && userData.user?.user?.name) {
+                    return `Dr. ${userData.user.user.name}`;
+                  } else if (userRole === 'MEDECIN' && userData.user?.user.profession) {
+                    return userData.user.profession;
+                  } else if (userRole === 'ETUDIANT' && userData.user?.user?.name) {
+                    return userData.user.user.name;
+                  } else if (userRole === 'ADMIN' && userData.user.name) {
+                    return userData.user.name;
+                  } else {
+                    return "User";
+                  }
+                })()}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {(() => {
+                  const userData = JSON.parse(localStorage.getItem("user") || "{}");
+                  let userRole;
+                  if (JSON.parse(localStorage.getItem("user") as string)?.user!=null)
+                  {
+                    userRole = JSON.parse(localStorage.getItem("user") as string)?.user.role;
+                  }else
+                  {
+                    userRole = JSON.parse(localStorage.getItem("user") as string)?.role;
+
+                  }                  
+                  if (userRole === 'MEDECIN' && userData.user?.profession) {
+                    return userData.user.profession;
+                  } else {
+                    return userRole || "User";
+                  }
+                })()}
+              </Typography>
             </Box>
+           
           </Box>
         </Box>
       </Toolbar>

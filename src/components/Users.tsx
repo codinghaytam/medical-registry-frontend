@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import useInterval from '../utiles/useInterval';
 import { 
   Box, Typography, Card, CardContent, Button, TextField, InputAdornment,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   TablePagination, Paper, IconButton, Menu, MenuItem, Dialog,
   DialogTitle, DialogContent, DialogActions, FormControl, InputLabel,
-  Select, SelectChangeEvent, useTheme
+  Select, SelectChangeEvent, useTheme, CircularProgress, Alert
 } from '@mui/material';
-import { Search, Plus, MoreVertical, Edit, Trash2, User } from 'lucide-react';
+import { Search, Plus, MoreVertical, Edit, Trash2, User, RefreshCw } from 'lucide-react';
 import { userService, UserData } from '../services/userService';
 
 const Users: React.FC = () => {
@@ -16,7 +17,10 @@ const Users: React.FC = () => {
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
   const [users, setUsers] = useState<UserData[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [networkError, setNetworkError] = useState<string | null>(null);
   const [newUser, setNewUser] = useState({
     username: '',
     firstName: '',
@@ -26,21 +30,30 @@ const Users: React.FC = () => {
   });
   const [searchQuery, setSearchQuery] = useState('');
 
+  const fetchUsers = async () => {
+    setIsLoading(true);
+    setNetworkError(null);
+    try {
+      const data = await userService.getAll();
+      setUsers(data);
+    } catch (error: any) {
+      console.error('Failed to fetch users:', error);
+      setNetworkError(error.message || 'Failed to load users. Please try again.');
+      // Still set empty array instead of failing completely
+      setUsers([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Set up auto-refresh for users list every 5 minutes
+  useInterval(() => {
+    fetchUsers();
+  }, 300000); // 5 minutes in milliseconds
+
   useEffect(() => {
     fetchUsers();
   }, []);
-
-  const fetchUsers = async () => {
-    try {
-      setLoading(true);
-      const data = await userService.getAll();
-      setUsers(data);
-    } catch (error) {
-      console.error('Failed to fetch users:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleChangePage = (event: unknown, newPage: number) => {
     setPage(newPage);
@@ -61,9 +74,14 @@ const Users: React.FC = () => {
     setSelectedUserId(null);
   };
 
-  const handleOpenDialog = () => setOpenDialog(true);
+  const handleOpenDialog = () => {
+    setOpenDialog(true);
+    setError(null);
+  };
+  
   const handleCloseDialog = () => {
     setOpenDialog(false);
+    setError(null);
     setNewUser({
       username: '',
       firstName: '',
@@ -90,22 +108,40 @@ const Users: React.FC = () => {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
     try {
       await userService.create(newUser);
       handleCloseDialog();
       fetchUsers();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to create user:', error);
+      if (error.response) {
+        try {
+          const errorData = await error.response.json().catch(() => null);
+          setError(errorData?.error || error.message || "Une erreur s'est produite lors de l'enregistrement de l'utilisateur");
+        } catch (e) {
+          setError(error.message || "Une erreur s'est produite lors de l'enregistrement de l'utilisateur");
+        }
+      } else {
+        setError(error.message || "Une erreur s'est produite lors de l'enregistrement de l'utilisateur");
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id: string) => {
+    setIsLoading(true);
     try {
       await userService.delete(id);
       handleMenuClose();
       fetchUsers();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to delete user:', error);
+      setNetworkError(error.message || "Failed to delete user");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -121,6 +157,32 @@ const Users: React.FC = () => {
 
   return (
     <Box sx={{ flexGrow: 1, p: 3 }}>
+      {/* Show network error message at the top if present */}
+      {networkError && (
+        <Box sx={{ 
+          mb: 4, 
+          p: 2, 
+          bgcolor: 'error.light', 
+          color: 'error.dark',
+          borderRadius: 1,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <Typography variant="body1">
+            {networkError}
+          </Typography>
+          <Button 
+            variant="outlined" 
+            color="error" 
+            size="small"
+            onClick={() => window.location.reload()}
+          >
+            Refresh
+          </Button>
+        </Box>
+      )}
+      
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
           Users
@@ -130,6 +192,7 @@ const Users: React.FC = () => {
           startIcon={<Plus size={18} />}
           sx={{ borderRadius: 2 }}
           onClick={handleOpenDialog}
+          disabled={isLoading}
         >
           Add New User
         </Button>
@@ -153,6 +216,17 @@ const Users: React.FC = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
+          <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
+            <Button 
+              variant="outlined" 
+              size="small"
+              startIcon={<RefreshCw size={16} />}
+              onClick={fetchUsers}
+              disabled={isLoading}
+            >
+              Refresh
+            </Button>
+          </Box>
         </CardContent>
       </Card>
 
@@ -171,37 +245,55 @@ const Users: React.FC = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {!loading && Array.isArray(filteredUsers) && filteredUsers
-                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                .map((user) => (
-                  <TableRow key={user.id}>
-                    <TableCell>
-                      <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                        <User size={14} style={{ marginRight: 8 }} />
-                        {`${user.firstName || ''} ${user.lastName || ''}`}
-                      </Box>
-                    </TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>{user.roles?.join(', ') || 'No roles'}</TableCell>
-                    <TableCell>{user.username}</TableCell>
-                    <TableCell>{user.enabled ? 'Active' : 'Inactive'}</TableCell>
-                    <TableCell align="right">
-                      <IconButton 
-                        size="small" 
-                        onClick={(event) => handleMenuClick(event, parseInt(user.id))}
-                      >
-                        <MoreVertical size={18} />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                ))}
+              {isLoading && users.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} align="center">
+                    <CircularProgress size={24} sx={{ mr: 1 }} />
+                    Loading users...
+                  </TableCell>
+                </TableRow>
+              ) : filteredUsers.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} align="center">
+                    <Typography variant="body1" sx={{ py: 2 }}>
+                      {networkError ? "Couldn't load users due to a network error" : "No users found"}
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredUsers
+                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                  .map((user) => (
+                    <TableRow key={user.id}>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                          <User size={14} style={{ marginRight: 8 }} />
+                          {`${user.firstName || ''} ${user.lastName || ''}`}
+                        </Box>
+                      </TableCell>
+                      <TableCell>{user.email}</TableCell>
+                      <TableCell>{user.roles?.join(', ') || 'No roles'}</TableCell>
+                      <TableCell>{user.username}</TableCell>
+                      <TableCell>{user.enabled ? 'Active' : 'Inactive'}</TableCell>
+                      <TableCell align="right">
+                        <IconButton 
+                          size="small" 
+                          onClick={(event) => handleMenuClick(event, parseInt(user.id))}
+                          disabled={isLoading}
+                        >
+                          <MoreVertical size={18} />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))
+              )}
             </TableBody>
           </Table>
         </TableContainer>
         <TablePagination
           rowsPerPageOptions={[5, 10, 25]}
           component="div"
-          count={users.length}
+          count={filteredUsers.length}
           rowsPerPage={rowsPerPage}
           page={page}
           onPageChange={handleChangePage}
@@ -235,7 +327,11 @@ const Users: React.FC = () => {
           <Edit size={16} style={{ marginRight: 8 }} />
           Edit
         </MenuItem>
-        <MenuItem onClick={handleMenuClose} sx={{ color: 'error.main' }}>
+        <MenuItem 
+          onClick={() => selectedUserId && handleDelete(selectedUserId.toString())} 
+          sx={{ color: 'error.main' }}
+          disabled={isLoading}
+        >
           <Trash2 size={16} style={{ marginRight: 8 }} />
           Delete
         </MenuItem>
@@ -246,6 +342,20 @@ const Users: React.FC = () => {
         <DialogTitle>Add New User</DialogTitle>
         <form onSubmit={handleSubmit}>
           <DialogContent>
+            {/* Show error message if present */}
+            {error && (
+              <Box sx={{ 
+                mb: 3,
+                p: 2, 
+                bgcolor: 'error.light', 
+                color: 'error.dark',
+                borderRadius: 1,
+                fontSize: '0.875rem'
+              }}>
+                {error}
+              </Box>
+            )}
+            
             <TextField
               fullWidth
               label="Username"
@@ -253,6 +363,7 @@ const Users: React.FC = () => {
               value={newUser.username}
               onChange={handleInputChange}
               required
+              disabled={isSubmitting}
               sx={{ mb: 2 }}
             />
             <TextField
@@ -262,6 +373,7 @@ const Users: React.FC = () => {
               value={newUser.firstName}
               onChange={handleInputChange}
               required
+              disabled={isSubmitting}
               sx={{ mb: 2 }}
             />
             <TextField
@@ -271,6 +383,7 @@ const Users: React.FC = () => {
               value={newUser.lastName}
               onChange={handleInputChange}
               required
+              disabled={isSubmitting}
               sx={{ mb: 2 }}
             />
             <TextField
@@ -281,6 +394,7 @@ const Users: React.FC = () => {
               value={newUser.email}
               onChange={handleInputChange}
               required
+              disabled={isSubmitting}
               sx={{ mb: 2 }}
             />
             <FormControl fullWidth sx={{ mb: 2 }}>
@@ -290,6 +404,7 @@ const Users: React.FC = () => {
                 label="Role"
                 onChange={handleRoleChange}
                 required
+                disabled={isSubmitting}
               >
                 <MenuItem value="Dentist">Dentist</MenuItem>
                 <MenuItem value="Assistant">Assistant</MenuItem>
@@ -298,8 +413,15 @@ const Users: React.FC = () => {
             </FormControl>
           </DialogContent>
           <DialogActions>
-            <Button onClick={handleCloseDialog}>Cancel</Button>
-            <Button type="submit" variant="contained">Save</Button>
+            <Button onClick={handleCloseDialog} disabled={isSubmitting}>Cancel</Button>
+            <Button 
+              type="submit" 
+              variant="contained"
+              disabled={isSubmitting}
+              startIcon={isSubmitting ? <CircularProgress size={20} /> : undefined}
+            >
+              {isSubmitting ? 'Saving...' : 'Save'}
+            </Button>
           </DialogActions>
         </form>
       </Dialog>

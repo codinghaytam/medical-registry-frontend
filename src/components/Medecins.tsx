@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import useInterval from '../utiles/useInterval';
 import {
   Box,
   Typography,
@@ -39,6 +40,7 @@ import {
   Edit,
   Trash2,
   User,
+  RefreshCw,
 } from 'lucide-react';
 import { medecinService, MedecinData, CreateMedecinData } from '../services/medecinService';
 
@@ -61,17 +63,31 @@ const Medecins: React.FC = () => {
     pwd:''
   });
   const [isEditing, setIsEditing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [networkError, setNetworkError] = useState<string | null>(null);
 
   const fetchMedecins = async () => {
+    setIsLoading(true);
+    setNetworkError(null);
     try {
       const data = await medecinService.getAll();
       setMedecins(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching medecins:', error);
+      setNetworkError(error.message || 'Failed to load doctors. Please try again.');
+      // Still set empty array instead of failing completely
+      setMedecins([]);
+    } finally {
+      setIsLoading(false);
     }
   };
+
+  // Set up auto-refresh for medecins list every 5 minutes
+  useInterval(() => {
+    fetchMedecins();
+  }, 300000); // 5 minutes in milliseconds
 
   useEffect(() => {
     fetchMedecins();
@@ -137,6 +153,7 @@ const Medecins: React.FC = () => {
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setIsEditing(false);
+    setError(null);
   };
 
   const handleTextInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -186,21 +203,35 @@ const Medecins: React.FC = () => {
       }
       handleCloseDialog();
       fetchMedecins();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save medecin:', error);
-      setError(error instanceof Error ? error.message : 'Failed to save doctor. Please try again.');
+      if (error.response) {
+        try {
+          const errorData = await error.response.json().catch(() => null);
+          setError(errorData?.error || error.message || "Une erreur s'est produite lors de l'enregistrement du médecin");
+        } catch (e) {
+          setError(error.message || "Une erreur s'est produite lors de l'enregistrement du médecin");
+        }
+      } else {
+        setError(error.message || "Une erreur s'est produite lors de l'enregistrement du médecin");
+      }
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id: string) => {
+    setIsLoading(true);
+    setError(null);
     try {
       await medecinService.delete(id);
       handleMenuClose();
       fetchMedecins();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to delete medecin:', error);
+      setNetworkError(error.message || "Failed to delete doctor");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -215,6 +246,32 @@ const Medecins: React.FC = () => {
 
   return (
     <Box sx={{ flexGrow: 1, p: 3 }}>
+      {/* Show network error message at the top if present */}
+      {networkError && (
+        <Box sx={{ 
+          mb: 4, 
+          p: 2, 
+          bgcolor: 'error.light', 
+          color: 'error.dark',
+          borderRadius: 1,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <Typography variant="body1">
+            {networkError}
+          </Typography>
+          <Button 
+            variant="outlined" 
+            color="error" 
+            size="small"
+            onClick={() => window.location.reload()}
+          >
+            Refresh
+          </Button>
+        </Box>
+      )}
+      
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
           Médecins
@@ -224,6 +281,7 @@ const Medecins: React.FC = () => {
           startIcon={<Plus size={18} />}
           sx={{ borderRadius: 2 }}
           onClick={() => handleOpenDialog()}
+          disabled={isLoading}
         >
           Add New Doctor
         </Button>
@@ -246,6 +304,17 @@ const Medecins: React.FC = () => {
               ),
             }}
           />
+          <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
+            <Button 
+              variant="outlined" 
+              size="small"
+              startIcon={<RefreshCw size={16} />}
+              onClick={fetchMedecins}
+              disabled={isLoading}
+            >
+              Refresh
+            </Button>
+          </Box>
         </CardContent>
       </Card>
 
@@ -265,34 +334,52 @@ const Medecins: React.FC = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {Array.isArray(filteredMedecins) && filteredMedecins
-                .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
-                .map((medecin) => (
-                  <TableRow
-                    key={medecin.id}
-                    sx={{
-                      '&:last-child td, &:last-child th': { border: 0 },
-                    }}
-                  >
-                    <TableCell>
-                      <User size={14} style={{ marginRight: 8 }} />
-                    </TableCell>
-                    <TableCell>{medecin.user?.username}</TableCell>
-                    <TableCell>{medecin.user?.email}</TableCell>
-                    <TableCell>{medecin.user?.name}</TableCell>
-                    <TableCell>{medecin.user?.role}</TableCell>
-                    <TableCell>{medecin.profession}</TableCell>
-                    <TableCell>{medecin.isSpecialiste ? 'Yes' : 'No'}</TableCell>
-                    <TableCell align="right">
-                      <IconButton
-                        size="small"
-                        onClick={(event) => handleMenuClick(event, medecin.id)}
-                      >
-                        <MoreVertical size={18} />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                ))}
+              {isLoading && medecins.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} align="center">
+                    <CircularProgress size={24} sx={{ mr: 1 }} />
+                    Loading doctors...
+                  </TableCell>
+                </TableRow>
+              ) : filteredMedecins.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} align="center">
+                    <Typography variant="body1" sx={{ py: 2 }}>
+                      {networkError ? "Couldn't load doctors due to a network error" : "No doctors found"}
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredMedecins
+                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                  .map((medecin) => (
+                    <TableRow
+                      key={medecin.id}
+                      sx={{
+                        '&:last-child td, &:last-child th': { border: 0 },
+                      }}
+                    >
+                      <TableCell>
+                        <User size={14} style={{ marginRight: 8 }} />
+                      </TableCell>
+                      <TableCell>{medecin.user?.username}</TableCell>
+                      <TableCell>{medecin.user?.email}</TableCell>
+                      <TableCell>{medecin.user?.name}</TableCell>
+                      <TableCell>{medecin.user?.role}</TableCell>
+                      <TableCell>{medecin.profession}</TableCell>
+                      <TableCell>{medecin.isSpecialiste ? 'Yes' : 'No'}</TableCell>
+                      <TableCell align="right">
+                        <IconButton
+                          size="small"
+                          onClick={(event) => handleMenuClick(event, medecin.id)}
+                          disabled={isLoading}
+                        >
+                          <MoreVertical size={18} />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))
+              )}
             </TableBody>
           </Table>
         </TableContainer>
@@ -341,6 +428,7 @@ const Medecins: React.FC = () => {
         <MenuItem
           onClick={() => selectedMedecinId && handleDelete(selectedMedecinId)}
           sx={{ color: 'error.main' }}
+          disabled={isLoading}
         >
           <Trash2 size={16} style={{ marginRight: 8 }} />
           Delete
@@ -351,6 +439,20 @@ const Medecins: React.FC = () => {
         <DialogTitle>{isEditing ? 'Edit Doctor' : 'Add New Doctor'}</DialogTitle>
         <form onSubmit={handleSubmit}>
           <DialogContent>
+            {/* Show error message if present */}
+            {error && (
+              <Box sx={{ 
+                mb: 3,
+                p: 2, 
+                bgcolor: 'error.light', 
+                color: 'error.dark',
+                borderRadius: 1,
+                fontSize: '0.875rem'
+              }}>
+                {error}
+              </Box>
+            )}
+            
             <TextField
               size="small"
               label="First Name"
@@ -403,7 +505,7 @@ const Medecins: React.FC = () => {
                 disabled={isSubmitting}
               >
                 <MenuItem value="PARODENTAIRE">Parodentaire</MenuItem>
-                <MenuItem value="ORTHODONTAIRE">Orthodentaire</MenuItem>
+                <MenuItem value="ORTHODONTAIRE">Orthodontaire</MenuItem>
               </Select>
             </FormControl>
             <FormControlLabel
@@ -431,17 +533,6 @@ const Medecins: React.FC = () => {
           </DialogActions>
         </form>
       </Dialog>
-
-      <Snackbar
-        open={!!error}
-        autoHideDuration={6000}
-        onClose={() => setError(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert onClose={() => setError(null)} severity="error" sx={{ width: '100%' }}>
-          {error}
-        </Alert>
-      </Snackbar>
     </Box>
   );
 };

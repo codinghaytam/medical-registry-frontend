@@ -12,6 +12,7 @@ import Consultations from './components/Consultation';
 import { Logout } from './utiles/Logout';
 import Seances from './components/Seances';
 import Medecins from './components/Medecins';
+import PatientDetails from './components/PatientDetails';
 
 function App() {
   return (
@@ -26,7 +27,7 @@ function App() {
               <Route path="analytics" element={<Analytics />} />
               <Route path="users" element={<Users />} />
               <Route path='patients' element={<Patients/>}/>
-              <Route path="settings" element={<Settings />} />
+              <Route path="patients/:id" element={<PatientDetails />} />
               <Route path="consultation" element={<Consultations />} />
               <Route path="sceance" element={<Seances />} />
               <Route path="medecins" element={<Medecins />} />

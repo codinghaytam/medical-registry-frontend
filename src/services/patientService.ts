@@ -27,6 +27,11 @@ export const patientService = {
     return response.json();
   },
 
+  getById: async (id: string) => {
+    const response = await fetch(`${BASE_URL}/patient/${id}`);
+    return response.json();
+  },
+
   create: async (data: PatientData) => {
     const response = await fetch(`${BASE_URL}/patient`, {
       method: 'POST',

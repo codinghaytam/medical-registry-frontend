@@ -87,14 +87,9 @@ const Sidebar: React.FC<SidebarProps> = ({ open, handleDrawerToggle }) => {
       text: 'Médecins', 
       icon: <User size={22} />, 
       path: '/medecins',
-      allowedRoles: ['ADMIN', 'MEDECIN', 'ETUDIANT'] 
-    },
-    { 
-      text: 'Settings', 
-      icon: <Settings size={22} />, 
-      path: '/settings',
       allowedRoles: ['ADMIN'] 
     },
+    
   ];
 
   // Filter menu items based on user role
@@ -120,11 +115,7 @@ const Sidebar: React.FC<SidebarProps> = ({ open, handleDrawerToggle }) => {
         )}
       </Box>
       <Divider />
-      <Box sx={{ px: 2, py: 1 }}>
-        <Typography variant="body2" color="text.secondary">
-          Logged in as: {userRole}
-        </Typography>
-      </Box>
+      
       <List sx={{ mt: 1 }}>
         {menuItems.map((item) => (
           <ListItem key={item.text} disablePadding sx={{ display: 'block', mb: 0.5 }}>
