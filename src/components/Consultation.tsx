@@ -36,7 +36,8 @@ import {
   StepLabel,
   Grid,
   Divider,
-  Collapse
+  Collapse,
+  Snackbar
 } from '@mui/material';
 import { 
   Search, 
@@ -50,7 +51,8 @@ import {
   Eye,
   Save,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  RefreshCw
 } from 'lucide-react';
 import { patientService, HygieneBuccoDentaire, MotifConsultation, TypeMastication } from '../services/patientService';
 import { userService } from '../services/userService';
@@ -188,6 +190,29 @@ const Consultations: React.FC = () => {
   const [networkError, setNetworkError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Add delete confirmation dialog state
+  const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
+  const [consultationToDelete, setConsultationToDelete] = useState<string | null>(null);
+  
+  // Type for feedback notification styling
+  type FeedbackType = 'success' | 'error' | 'info';
+  
+  // State for feedback notifications
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [feedbackType, setFeedbackType] = useState<FeedbackType>('success');
+  
+  // Show feedback notification
+  const showFeedback = (message: string, type: FeedbackType = 'success') => {
+    setFeedbackMessage(message);
+    setFeedbackType(type);
+    setFeedbackOpen(true);
+  };
+  
+  // Close feedback notification
+  const handleCloseFeedback = () => {
+    setFeedbackOpen(false);
+  };
   
   // Function to fetch all necessary data
   const fetchData = async () => {
@@ -315,6 +340,8 @@ const Consultations: React.FC = () => {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
     
     // If user is MEDECIN, force the medecinId to be the current user's ID
     if (userRole === 'MEDECIN') {
@@ -327,41 +354,62 @@ const Consultations: React.FC = () => {
     
     try {
       await consultationService.create(newConsultation);
-      // Refresh the consultations list
-      const updatedConsultations = await consultationService.getAll();
+      showFeedback('Consultation created successfully');
+      handleCloseDialog();
       
-      // If user is MEDECIN, filter consultations again
-      if (userRole === 'MEDECIN') {
-        const currentMedecinId = JSON.parse(localStorage.getItem('user') || '').id;
-        if (currentMedecinId) {
-          const filteredConsultations = updatedConsultations.filter(
-            consultation => consultation.medecinId === currentMedecinId
-          );
-          setConsultations(filteredConsultations);
+      // Refresh the consultations list
+      try {
+        const updatedConsultations = await consultationService.getAll();
+        
+        // If user is MEDECIN, filter consultations again
+        if (userRole === 'MEDECIN') {
+          const currentMedecinId = JSON.parse(localStorage.getItem('user') || '{}').user?.id;
+          if (currentMedecinId) {
+            const filteredConsultations = updatedConsultations.filter(
+              consultation => consultation.medecinId === currentMedecinId
+            );
+            setConsultations(filteredConsultations);
+          } else {
+            setConsultations(updatedConsultations);
+          }
         } else {
           setConsultations(updatedConsultations);
         }
-      } else {
-        setConsultations(updatedConsultations);
+      } catch (refreshError) {
+        console.error('Error refreshing data:', refreshError);
+        // Don't block the UX flow on refresh errors
+        showFeedback('Consultation created, but unable to refresh the list', 'info');
       }
-      
-      handleCloseDialog();
     } catch (error: any) {
       console.error('Error creating consultation:', error);
-      // Display error message if the error contains information
-      
+      const errorMessage = error.message || 'Failed to create consultation. Please try again.';
+      setError(errorMessage);
+      showFeedback(errorMessage, 'error');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    // Only ADMIN or MEDECIN (for their own consultations) can delete
-    if (!canEdit()) {
-      handleMenuClose();
-      return;
-    }
+  // Show delete confirmation dialog
+  const handleConfirmDelete = (id: string) => {
+    setConsultationToDelete(id);
+    setOpenDeleteDialog(true);
+    handleMenuClose();
+  };
+
+  // Close delete confirmation dialog
+  const handleCloseDeleteDialog = () => {
+    setOpenDeleteDialog(false);
+    setConsultationToDelete(null);
+  };
+
+  // Proceed with delete after confirmation
+  const handleConfirmedDelete = async () => {
+    if (!consultationToDelete) return;
     
+    setIsLoading(true);
     try {
-      await consultationService.delete(id);
+      await consultationService.delete(consultationToDelete);
       // Refresh the consultations list
       const updatedConsultations = await consultationService.getAll();
       
@@ -382,8 +430,23 @@ const Consultations: React.FC = () => {
       }
     } catch (error) {
       console.error('Error deleting consultation:', error);
+      setNetworkError("Failed to delete consultation. Please try again later.");
+    } finally {
+      setIsLoading(false);
+      setOpenDeleteDialog(false);
+      setConsultationToDelete(null);
     }
-    handleMenuClose();
+  };
+
+  // Replace the existing handleDelete function with the confirm dialog
+  const handleDelete = async (id: string) => {
+    // Only ADMIN or MEDECIN (for their own consultations) can delete
+    if (!canEdit()) {
+      handleMenuClose();
+      return;
+    }
+    
+    handleConfirmDelete(id);
   };
 
   // Handle diagnosis form dialog
@@ -414,10 +477,13 @@ const Consultations: React.FC = () => {
 
   const handleDiagnosisSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
     
     // If user is MEDECIN, force the medecinId to be the current user's ID
     if (userRole === 'MEDECIN') {
-      const currentMedecinId = JSON.parse(localStorage.getItem('user') || '').id;
+      const userData = JSON.parse(localStorage.getItem('user') || '{}');
+      const currentMedecinId = userData.user?.id;
       if (currentMedecinId) {
         newDiagnosis.medecinId = currentMedecinId;
       }
@@ -426,28 +492,39 @@ const Consultations: React.FC = () => {
     try {
       if (selectedConsultation) {
         await consultationService.addDiagnosis(selectedConsultation, newDiagnosis);
-        // Refresh the consultations list
-        const updatedConsultations = await consultationService.getAll();
+        showFeedback('Diagnosis added successfully');
+        handleCloseDiagnosisDialog();
         
-        // Filter if needed
-        if (userRole === 'MEDECIN') {
-          const currentMedecinId = JSON.parse(localStorage.getItem('user') || '').id;
-          if (currentMedecinId) {
-            const filteredConsultations = updatedConsultations.filter(
-              consultation => consultation.medecinId === currentMedecinId
-            );
-            setConsultations(filteredConsultations);
+        // Refresh the consultations list
+        try {
+          const updatedConsultations = await consultationService.getAll();
+          
+          // Filter if needed
+          if (userRole === 'MEDECIN') {
+            const currentMedecinId = JSON.parse(localStorage.getItem('user') || '{}').user?.id;
+            if (currentMedecinId) {
+              const filteredConsultations = updatedConsultations.filter(
+                consultation => consultation.medecinId === currentMedecinId
+              );
+              setConsultations(filteredConsultations);
+            } else {
+              setConsultations(updatedConsultations);
+            }
           } else {
             setConsultations(updatedConsultations);
           }
-        } else {
-          setConsultations(updatedConsultations);
+        } catch (refreshError) {
+          console.error('Error refreshing data:', refreshError);
+          showFeedback('Diagnosis added, but unable to refresh the list', 'info');
         }
       }
-      
-      handleCloseDiagnosisDialog();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding diagnosis:', error);
+      const errorMessage = error.message || 'Failed to add diagnosis. Please try again.';
+      setError(errorMessage);
+      showFeedback(errorMessage, 'error');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -548,10 +625,13 @@ const Consultations: React.FC = () => {
 
   const handleIntegratedSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
     
     // If user is MEDECIN, force the medecinId to be the current user's ID
     if (userRole === 'MEDECIN') {
-      const currentMedecinId = JSON.parse(localStorage.getItem('user') || '').id;
+      const userData = JSON.parse(localStorage.getItem('user') || '{}');
+      const currentMedecinId = userData.user?.id;
       if (currentMedecinId) {
         integratedForm.medecinId = currentMedecinId;
         if (includesDiagnosis && integratedForm.diagnosis) {
@@ -581,28 +661,38 @@ const Consultations: React.FC = () => {
         );
       }
       
-      // 3. Refresh the consultations list
-      const updatedConsultations = await consultationService.getAll();
+      showFeedback('Patient and consultation created successfully');
+      handleCloseIntegratedDialog();
       
-      // Filter if needed for MEDECIN users
-      if (userRole === 'MEDECIN') {
-        const currentMedecinId = JSON.parse(localStorage.getItem('user') || '').id;
-        if (currentMedecinId) {
-          const filteredConsultations = updatedConsultations.filter(
-            consultation => consultation.medecinId === currentMedecinId
-          );
-          setConsultations(filteredConsultations);
+      // 3. Refresh the consultations list
+      try {
+        const updatedConsultations = await consultationService.getAll();
+        
+        // Filter if needed for MEDECIN users
+        if (userRole === 'MEDECIN') {
+          const currentMedecinId = JSON.parse(localStorage.getItem('user') || '{}').user?.id;
+          if (currentMedecinId) {
+            const filteredConsultations = updatedConsultations.filter(
+              consultation => consultation.medecinId === currentMedecinId
+            );
+            setConsultations(filteredConsultations);
+          } else {
+            setConsultations(updatedConsultations);
+          }
         } else {
           setConsultations(updatedConsultations);
         }
-      } else {
-        setConsultations(updatedConsultations);
+      } catch (refreshError) {
+        console.error('Error refreshing data:', refreshError);
+        showFeedback('Data created successfully, but unable to refresh the list', 'info');
       }
-      
-      handleCloseIntegratedDialog();
     } catch (error: any) {
       console.error('Error creating consultation with patient:', error);
-      setNetworkError(error.message || 'Failed to create consultation with patient. Please try again.');
+      const errorMessage = error.message || 'Failed to create consultation with patient. Please try again.';
+      setError(errorMessage);
+      showFeedback(errorMessage, 'error');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -660,15 +750,6 @@ const Consultations: React.FC = () => {
         <RoleBasedAccess requiredRoles={['ADMIN', 'MEDECIN']}>
           <Box sx={{ display: 'flex', gap: 2 }}>
             <Button 
-              variant="outlined" 
-              startIcon={<Plus size={18} />}
-              sx={{ borderRadius: 2 }}
-              onClick={handleOpenDialog}
-              disabled={isLoading}
-            >
-              Add Consultation
-            </Button>
-            <Button 
               variant="contained" 
               startIcon={<User size={18} />}
               sx={{ borderRadius: 2 }}
@@ -711,15 +792,17 @@ const Consultations: React.FC = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
           <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
-            {/* Only ADMIN and MEDECIN can export data */}
-            <RoleBasedAccess requiredRoles={['ADMIN', 'MEDECIN']}>
-              <Button variant="outlined" size="small" sx={{ borderRadius: 2 }}>
-                Export
-              </Button>
-            </RoleBasedAccess>
-            <Button variant="outlined" size="small" sx={{ borderRadius: 2 }}>
-              Filter
-            </Button>
+            {/* Refresh button for all users */}
+            <Tooltip title="Refresh data">
+              <IconButton 
+                size="small" 
+                onClick={fetchData}
+                disabled={isLoading}
+              >
+                <RefreshCw size={18} />
+              </IconButton>
+            </Tooltip>
+            
           </Box>
         </CardContent>
       </Card>
@@ -733,6 +816,7 @@ const Consultations: React.FC = () => {
                 <TableCell>Patient</TableCell>
                 <TableCell>Médecin</TableCell>
                 <TableCell align="right">Actions</TableCell>
+                <TableCell></TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -833,8 +917,8 @@ const Consultations: React.FC = () => {
                                 {diagnosis.Medecin && (
                                   <Box component="span" sx={{ ml: 1, color: 'text.secondary', fontSize: '0.9em' }}>
                                     (Dr. {diagnosis.Medecin.user
-                                      ? `${diagnosis.Medecin.user.name} ${diagnosis.Medecin.userInfo.lastName}`
-                                      : (diagnosis.Medecin.user|| 'Unknown')})
+                                      ? `${diagnosis.Medecin.user.name}`
+                                      : (diagnosis.medecinId)})
                                   </Box>
                                 )}
                               </Typography>
@@ -887,16 +971,7 @@ const Consultations: React.FC = () => {
           transformOrigin={{ horizontal: 'right', vertical: 'top' }}
           anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
         >
-          <MenuItem onClick={() => {
-            const consultation = consultations.find(c => c.id === selectedConsultation);
-            if (consultation) {
-              handleOpenDialog(consultation);
-            }
-            handleMenuClose();
-          }}>
-            <Edit size={16} style={{ marginRight: 8 }} />
-            Edit
-          </MenuItem>
+          
           <MenuItem onClick={() => handleDelete(selectedConsultation!)} sx={{ color: 'error.main' }}>
             <Trash2 size={16} style={{ marginRight: 8 }} />
             Delete
@@ -927,7 +1002,7 @@ const Consultations: React.FC = () => {
       {/* Only ADMIN or MEDECIN can add/edit consultations */}
       <RoleBasedAccess requiredRoles={['ADMIN', 'MEDECIN']}>
         <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-          <DialogTitle>Add New Consultation</DialogTitle>
+          <DialogTitle>Update Consultation</DialogTitle>
           <form onSubmit={handleSubmit}>
             <DialogContent>
               <TextField
@@ -979,7 +1054,7 @@ const Consultations: React.FC = () => {
                   >
                     {Array.isArray(medecins) && medecins.map((medecin) => (
                       <MenuItem key={medecin.id} value={medecin.id}>
-                        {medecin.userInfo?.firstName} {medecin.userInfo?.lastName} - {medecin.profession}
+                        {medecin.user?.name}- {medecin.profession}
                       </MenuItem>
                     ))}
                   </Select>
@@ -1047,7 +1122,7 @@ const Consultations: React.FC = () => {
                   >
                     {Array.isArray(medecins) && medecins.map((medecin) => (
                       <MenuItem key={medecin.id} value={medecin.id}>
-                        {medecin.userInfo?.firstName} {medecin.userInfo?.lastName} - {medecin.profession}
+                        {medecin.user?.name} - {medecin.profession}
                       </MenuItem>
                     ))}
                   </Select>
@@ -1065,7 +1140,7 @@ const Consultations: React.FC = () => {
       <RoleBasedAccess requiredRoles={['ADMIN', 'MEDECIN']}>
         {/* Integrated Patient + Consultation + Diagnosis Form Dialog */}
         <Dialog open={openIntegratedDialog} onClose={handleCloseIntegratedDialog} maxWidth="md" fullWidth>
-          <DialogTitle>
+          <DialogTitle>   
             Create New Patient and Consultation
             <Typography variant="body2" color="text.secondary">
               Complete all steps to create a patient record with consultation
@@ -1292,7 +1367,7 @@ const Consultations: React.FC = () => {
                         >
                           {Array.isArray(medecins) && medecins.map((medecin) => (
                             <MenuItem key={medecin.id} value={medecin.id}>
-                              {medecin.userInfo?.firstName} {medecin.userInfo?.lastName} - {medecin.profession}
+                              {medecin.user?.name} - {medecin.profession}
                             </MenuItem>
                           ))}
                         </Select>
@@ -1379,7 +1454,7 @@ const Consultations: React.FC = () => {
                             >
                               {Array.isArray(medecins) && medecins.map((medecin) => (
                                 <MenuItem key={medecin.id} value={medecin.id}>
-                                  {medecin.userInfo?.firstName} {medecin.userInfo?.lastName} - {medecin.profession}
+                                  {medecin.user?.name} - {medecin.profession}
                                 </MenuItem>
                               ))}
                             </Select>
@@ -1417,6 +1492,50 @@ const Consultations: React.FC = () => {
           </form>
         </Dialog>
       </RoleBasedAccess>
+      <Dialog
+        open={openDeleteDialog}
+        onClose={handleCloseDeleteDialog}
+        aria-labelledby="delete-dialog-title"
+        aria-describedby="delete-dialog-description"
+      >
+        <DialogTitle id="delete-dialog-title">
+          Confirm Deletion
+        </DialogTitle>
+        <DialogContent>
+          <Typography id="delete-dialog-description">
+            Are you sure you want to delete this consultation? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDeleteDialog} color="primary">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmedDelete} 
+            color="error" 
+            variant="contained"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      {/* Feedback Snackbar */}
+      <Snackbar
+        open={feedbackOpen}
+        autoHideDuration={6000}
+        onClose={handleCloseFeedback}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={handleCloseFeedback} 
+          severity={feedbackType} 
+          variant="filled"
+          sx={{ width: '100%' }}
+        >
+          {feedbackMessage}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

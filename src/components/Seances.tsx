@@ -29,7 +29,10 @@ import {
   Tooltip,
   Chip,
   Alert,
-  Collapse
+  Collapse,
+  Snackbar,
+  Grid,
+  Divider
 } from '@mui/material';
 import { 
   Search, 
@@ -41,7 +44,14 @@ import {
   BarChart,
   FileImage,
   FilePlus,
-  Eye
+  Eye,
+  RefreshCw,
+  CheckCircle,
+  AlertCircle,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Image
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { patientService } from '../services/patientService';
@@ -53,6 +63,9 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { getUserRole, canEdit, canOnlyView } from '../utiles/RoleAccess';
 import RoleBasedAccess from '../utiles/RoleBasedAccess';
+
+// Define feedback type for consistent notification styling
+type FeedbackType = 'success' | 'error' | 'info';
 
 const Seances: React.FC = () => {
   const [page, setPage] = useState(0);
@@ -86,68 +99,135 @@ const Seances: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [networkError, setNetworkError] = useState<string | null>(null);
+  const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
+  const [seanceToDelete, setSeanceToDelete] = useState<string | null>(null);
+  const [openDeleteReevaluationDialog, setOpenDeleteReevaluationDialog] = useState(false);
+  const [reevaluationToDelete, setReevaluationToDelete] = useState<string | null>(null);
+  
+  // New state for feedback notifications
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [feedbackType, setFeedbackType] = useState<FeedbackType>('success');
+  
+  // New state for expanded rows
+  const [expandedRows, setExpandedRows] = useState<string[]>([]);
   
   // Get current user role
   const userRole = getUserRole();
   
+  // Show feedback notification
+  const showFeedback = (message: string, type: FeedbackType = 'success') => {
+    setFeedbackMessage(message);
+    setFeedbackType(type);
+    setFeedbackOpen(true);
+  };
+  
+  // Close feedback notification
+  const handleCloseFeedback = () => {
+    setFeedbackOpen(false);
+  };
+  
+  // Fetch seances when component mounts
+  const fetchData = async (): Promise<boolean> => {
+    setIsLoading(true);
+    setNetworkError(null);
+    try {
+      // Use Promise.allSettled instead of Promise.all to prevent one failed request from failing everything
+      const results = await Promise.allSettled([
+        seanceService.getAll(),
+        patientService.getAll(),
+        userService.getMedecins(),
+        reevaluationService.getAll()
+      ]);
+      
+      // Process results
+      const [seancesResult, patientsResult, medecinsResult, reevaluationsResult] = results;
+      
+      // Handle each result individually
+      let seancesData: any[] = [];
+      if (seancesResult.status === 'fulfilled') {
+        seancesData = seancesResult.value || [];
+      } else {
+        console.error('Error fetching seances:', seancesResult.reason);
+      }
+      
+      let patientsData: any[] = [];
+      if (patientsResult.status === 'fulfilled') {
+        patientsData = patientsResult.value || [];
+      } else {
+        console.error('Error fetching patients:', patientsResult.reason);
+      }
+      
+      let medecinsData: any[] = [];
+      if (medecinsResult.status === 'fulfilled') {
+        medecinsData = medecinsResult.value || [];
+      } else {
+        console.error('Error fetching medecins:', medecinsResult.reason);
+      }
+      
+      let reevaluationsData: any[] = [];
+      if (reevaluationsResult.status === 'fulfilled') {
+        reevaluationsData = reevaluationsResult.value || [];
+      } else {
+        console.error('Error fetching reevaluations:', reevaluationsResult.reason);
+      }
+      
+      // If user is MEDECIN, filter seances to only show their own
+      let filteredSeances = [...seancesData] || []; // Create a copy to prevent mutation issues
+      
+      if (userRole === 'MEDECIN') {
+        const userData = JSON.parse(localStorage.getItem('user') || '{}');
+        const currentMedecinId = userData.user?.id;
+        
+        if (currentMedecinId) {
+          filteredSeances = filteredSeances.filter(seance => seance.medecinId === currentMedecinId);
+        }
+      }
+      
+      // Always update state with fetched data, even if some requests fail
+      setSeances(filteredSeances);
+      setPatients(patientsData || []);
+      setMedecins(medecinsData || []);
+      setReevaluations(reevaluationsData || []);
+      
+      // Update seances without reevaluations
+      // Make sure reevaluationSeanceIds is always an array to prevent filter errors
+      const reevaluationSeanceIds = Array.isArray(reevaluationsData) 
+        ? reevaluationsData.map((r: any) => r.seanceId) 
+        : [];
+      
+      // Only filter if seances data is valid
+      let availableSeances = [];
+      if (Array.isArray(filteredSeances)) {
+        availableSeances = filteredSeances.filter((s: any) => s && s.id && !reevaluationSeanceIds.includes(s.id));
+      }
+      setSeancesWithoutReevaluation(availableSeances);
+      
+      // Check if at least some data was successfully fetched
+      const hasData = seancesResult.status === 'fulfilled' || 
+                    patientsResult.status === 'fulfilled' || 
+                    medecinsResult.status === 'fulfilled' || 
+                    reevaluationsResult.status === 'fulfilled';
+      
+      return hasData;
+    } catch (error: any) {
+      console.error('Error fetching data:', error);
+      setNetworkError(error.message || 'Failed to load data');
+      
+      // Set empty arrays as fallback but preserve any existing data
+      if (!seances.length) setSeances([]);
+      if (!patients.length) setPatients([]);
+      if (!medecins.length) setMedecins([]);
+      if (!reevaluations.length) setReevaluations([]);
+      
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
   useEffect(() => {
     // Fetch seances when component mounts
-    const fetchData = async () => {
-      setIsLoading(true);
-      setNetworkError(null);
-      try {
-        const [seancesData, patientsData, medecinsData, reevaluationsData] = await Promise.all([
-          seanceService.getAll().catch(error => {
-            console.error('Error fetching seances:', error);
-            throw new Error('Failed to fetch séances');
-          }),
-          patientService.getAll().catch(error => {
-            console.error('Error fetching patients:', error);
-            throw new Error('Failed to fetch patients');
-          }),
-          userService.getMedecins().catch(error => {
-            console.error('Error fetching medecins:', error);
-            throw new Error('Failed to fetch médecins');
-          }),
-          reevaluationService.getAll().catch(error => {
-            console.error('Error fetching reevaluations:', error);
-            throw new Error('Failed to fetch réévaluations');
-          })
-        ]);
-        
-        // If user is MEDECIN, filter seances to only show their own
-        let filteredSeances = seancesData || [];
-        if (userRole === 'MEDECIN') {
-          const userData = JSON.parse(localStorage.getItem('user') || '{}');
-          const currentMedecinId = userData.user?.id;
-          if (currentMedecinId) {
-            filteredSeances = seancesData.filter(
-              seance => seance.medecinId === currentMedecinId
-            );
-          }
-        }
-        
-        setSeances(filteredSeances);
-        setPatients(patientsData || []);
-        setMedecins(medecinsData || []);
-        setReevaluations(reevaluationsData || []);
-        
-        // Filter seances that don't have a reevaluation yet
-        const reevaluationSeanceIds = reevaluationsData?.map(r => r.seanceId) || [];
-        const availableSeances = filteredSeances.filter(s => !reevaluationSeanceIds.includes(s.id!));
-        setSeancesWithoutReevaluation(availableSeances);
-      } catch (error) {
-        console.error('Error fetching data:', error);
-        setNetworkError(error instanceof Error ? error.message : 'Network error occurred');
-        // Still set empty arrays instead of failing completely
-        if (!seances.length) setSeances([]);
-        if (!patients.length) setPatients([]);
-        if (!medecins.length) setMedecins([]);
-        if (!reevaluations.length) setReevaluations([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
     fetchData();
   }, [userRole]);
 
@@ -231,8 +311,6 @@ const Seances: React.FC = () => {
       const profession = userData.profession || 
                         (userData.user && userData.user.profession) ||
                         '';
-      
-      console.log('Filtering patients by profession:', profession);
       
       if (profession) {
         // Filter patients to match the médecin's profession (State field)
@@ -371,6 +449,7 @@ const Seances: React.FC = () => {
     // Check if a file is required but not provided
     if (type === 'REEVALUATION' && !selectedFile && !isEditing) {
       setError('Image file is required for reevaluation séances');
+      showFeedback('Image file is required for reevaluation séances', 'error');
       return false;
     }
     return true;
@@ -388,13 +467,6 @@ const Seances: React.FC = () => {
     }
     
     // If user is MEDECIN, force the medecinId to be the current user's ID
-    if (userRole === 'MEDECIN') {
-      const userData = JSON.parse(localStorage.getItem('user') || '{}');
-      const currentMedecinId = userData.user?.id;
-      if (currentMedecinId) {
-        newSeance.medecinId = currentMedecinId;
-      }
-    }
     
     try {
       let createdSeanceId: string | undefined;
@@ -404,9 +476,15 @@ const Seances: React.FC = () => {
         // For REEVALUATION type, prepare the reevaluation data to be included
         if (newSeance.type === 'REEVALUATION') {
           // Update the seance with the Reevaluation data
+          // Make sure to include the file
+          const updatedReevaluation = {
+            ...newReevaluation,
+            sondagePhoto: selectedFile || undefined
+          };
+          
           const updatedSeance = await seanceService.update(selectedSeanceId, {
             ...newSeance,
-            Reevaluation: newReevaluation as ReevaluationData
+            Reevaluation: updatedReevaluation as ReevaluationData
           }).catch(error => {
             console.error('Error updating seance with reevaluation:', error);
             throw new Error('Failed to update séance. Please try again later.');
@@ -415,6 +493,8 @@ const Seances: React.FC = () => {
           if (updatedSeance?.id) {
             createdSeanceId = updatedSeance.id;
           }
+          
+          showFeedback('Séance updated successfully');
         } else {
           // For non-REEVALUATION types, just update the seance
           const updatedSeance = await seanceService.update(selectedSeanceId, newSeance)
@@ -426,20 +506,29 @@ const Seances: React.FC = () => {
           if (updatedSeance?.id) {
             createdSeanceId = updatedSeance.id;
           }
+          
+          showFeedback('Séance updated successfully');
         }
       } else {
         // Creating a new seance
         if (newSeance.type === 'REEVALUATION') {
           // For REEVALUATION type, include reevaluation data in the creation process
+          // Make sure to include the file
+          const reevaluationWithFile = {
+            ...newReevaluation,
+            sondagePhoto: selectedFile || undefined
+          };
+          
           const createdSeance = await seanceService.create({
             ...newSeance,
-            Reevaluation: newReevaluation as ReevaluationData
+            Reevaluation: reevaluationWithFile as ReevaluationData
           }).catch(error => {
             console.error('Error creating seance with reevaluation:', error);
             throw new Error('Failed to create new séance. Please try again later.');
           });
           
           createdSeanceId = createdSeance?.id;
+          showFeedback('New séance created successfully');
         } else {
           // For non-REEVALUATION types, just create the seance
           const createdSeance = await seanceService.create(newSeance)
@@ -449,6 +538,7 @@ const Seances: React.FC = () => {
             });
           
           createdSeanceId = createdSeance?.id;
+          showFeedback('New séance created successfully');
         }
       }
       
@@ -456,39 +546,14 @@ const Seances: React.FC = () => {
       
       // Refresh data with error handling
       try {
-        const [updatedSeances, updatedReevaluations] = await Promise.all([
-          seanceService.getAll().catch(e => {
-            console.error('Error refreshing seances:', e);
-            return seances; // Fall back to existing data
-          }),
-          reevaluationService.getAll().catch(e => {
-            console.error('Error refreshing reevaluations:', e);
-            return reevaluations; // Fall back to existing data
-          })
-        ]);
-        
-        // If user is MEDECIN, filter seances again
-        let filteredSeances = updatedSeances;
-        if (userRole === 'MEDECIN') {
-          const userData = JSON.parse(localStorage.getItem('user') || '{}');
-          const currentMedecinId = userData.user?.id;
-          if (currentMedecinId) {
-            filteredSeances = updatedSeances.filter(
-              seance => seance.medecinId === currentMedecinId
-            );
-          }
+        const success = await fetchData();
+        if (!success) {
+          showFeedback('Séance saved, but unable to refresh the list', 'info');
         }
-        
-        setSeances(filteredSeances);
-        setReevaluations(updatedReevaluations);
-        
-        // Update seances without reevaluations
-        const reevaluationSeanceIds = updatedReevaluations.map(r => r.seanceId);
-        const availableSeances = filteredSeances.filter(s => !reevaluationSeanceIds.includes(s.id!));
-        setSeancesWithoutReevaluation(availableSeances);
       } catch (refreshError) {
         console.error('Error refreshing data:', refreshError);
         // Don't block the UX flow on refresh errors
+        showFeedback('Séance saved, but unable to refresh the list', 'info');
       }
     } catch (error: any) {
       console.error('Error saving seance:', error);
@@ -496,12 +561,18 @@ const Seances: React.FC = () => {
       if (error.response) {
         try {
           const errorData = await error.response.json().catch(() => null);
-          setError(errorData?.error || error.message || "Une erreur s'est produite lors de l'enregistrement de la séance");
+          const errorMsg = errorData?.error || error.message || "Une erreur s'est produite lors de l'enregistrement de la séance";
+          setError(errorMsg);
+          showFeedback(errorMsg, 'error');
         } catch (e) {
-          setError(error.message || "Une erreur s'est produite lors de l'enregistrement de la séance");
+          const errorMsg = error.message || "Une erreur s'est produite lors de l'enregistrement de la séance";
+          setError(errorMsg);
+          showFeedback(errorMsg, 'error');
         }
       } else {
-        setError(error.message || "Une erreur s'est produite lors de l'enregistrement de la séance");
+        const errorMsg = error.message || "Une erreur s'est produite lors de l'enregistrement de la séance";
+        setError(errorMsg);
+        showFeedback(errorMsg, 'error');
       }
     } finally {
       setIsLoading(false);
@@ -516,6 +587,7 @@ const Seances: React.FC = () => {
     // Validate file upload for new reevaluations
     if (!isReevaluationEditing && !selectedFile) {
       setError('Image file is required for reevaluation séances');
+      showFeedback('Image file is required for reevaluation séances', 'error');
       setIsLoading(false);
       return;
     }
@@ -538,9 +610,15 @@ const Seances: React.FC = () => {
       formData.append('date', new Date(selectedSeance.date).toISOString());
       formData.append('seanceId', newReevaluation.seanceId || '');
       
-      // Attach the image file if provided
+      // Attach the image file if provided - Debug log to verify
       if (selectedFile) {
+        console.log('Adding file to FormData:', selectedFile.name, selectedFile.type, selectedFile.size);
         formData.append('sondagePhoto', selectedFile);
+      }
+
+      // Debug log to check FormData contents
+      for (const pair of formData.entries()) {
+        console.log(`${pair[0]}: ${pair[1]}`);
       }
       
       if (isReevaluationEditing && selectedReevaluationId) {
@@ -549,51 +627,28 @@ const Seances: React.FC = () => {
             console.error('Error updating reevaluation:', error);
             throw new Error('Failed to update réévaluation. Please try again later.');
           });
+        showFeedback('Réévaluation updated successfully');
       } else {
         await reevaluationService.create(formData)
           .catch(error => {
             console.error('Error creating reevaluation:', error);
             throw new Error('Failed to create new réévaluation. Please try again later.');
           });
+        showFeedback('New réévaluation created successfully');
       }
       
       handleCloseReevaluationDialog();
       
       // Refresh data with error handling
       try {
-        const [updatedSeances, updatedReevaluations] = await Promise.all([
-          seanceService.getAll().catch(e => {
-            console.error('Error refreshing seances:', e);
-            return seances; // Fall back to existing data
-          }),
-          reevaluationService.getAll().catch(e => {
-            console.error('Error refreshing reevaluations:', e);
-            return reevaluations; // Fall back to existing data
-          })
-        ]);
-        
-        // If user is MEDECIN, filter seances again
-        let filteredSeances = updatedSeances;
-        if (userRole === 'MEDECIN') {
-          const userData = JSON.parse(localStorage.getItem('user') || '{}');
-          const currentMedecinId = userData.user?.id;
-          if (currentMedecinId) {
-            filteredSeances = updatedSeances.filter(
-              seance => seance.medecinId === currentMedecinId
-            );
-          }
+        const success = await fetchData();
+        if (!success) {
+          showFeedback('Réévaluation saved, but unable to refresh the list', 'info');
         }
-        
-        setSeances(filteredSeances);
-        setReevaluations(updatedReevaluations);
-        
-        // Update seances without reevaluations
-        const reevaluationSeanceIds = updatedReevaluations.map(r => r.seanceId);
-        const availableSeances = filteredSeances.filter(s => !reevaluationSeanceIds.includes(s.id!));
-        setSeancesWithoutReevaluation(availableSeances);
       } catch (refreshError) {
         console.error('Error refreshing data:', refreshError);
         // Don't block the UX flow on refresh errors
+        showFeedback('Réévaluation saved, but unable to refresh the list', 'info');
       }
     } catch (error: any) {
       console.error('Error saving reevaluation:', error);
@@ -601,12 +656,18 @@ const Seances: React.FC = () => {
       if (error.response) {
         try {
           const errorData = await error.response.json().catch(() => null);
-          setError(errorData?.error || error.message || "Une erreur s'est produite lors de l'enregistrement de la réévaluation");
+          const errorMsg = errorData?.error || error.message || "Une erreur s'est produite lors de l'enregistrement de la réévaluation";
+          setError(errorMsg);
+          showFeedback(errorMsg, 'error');
         } catch (e) {
-          setError(error.message || "Une erreur s'est produite lors de l'enregistrement de la réévaluation");
+          const errorMsg = error.message || "Une erreur s'est produite lors de l'enregistrement de la réévaluation";
+          setError(errorMsg);
+          showFeedback(errorMsg, 'error');
         }
       } else {
-        setError(error.message || "Une erreur s'est produite lors de l'enregistrement de la réévaluation");
+        const errorMsg = error.message || "Une erreur s'est produite lors de l'enregistrement de la réévaluation";
+        setError(errorMsg);
+        showFeedback(errorMsg, 'error');
       }
     } finally {
       setIsLoading(false);
@@ -626,52 +687,22 @@ const Seances: React.FC = () => {
       const seanceToDelete = seances.find(s => s.id === id);
       
       // Pass the seance type to use the correct endpoint
-      await seanceService.delete(id, seanceToDelete?.type)
-        .catch(error => {
-          console.error('Error deleting seance:', error);
-          throw new Error('Failed to delete séance. Please try again later.');
-        });
+      await seanceService.delete(id, seanceToDelete?.type);
       handleMenuClose();
+      showFeedback('Séance deleted successfully');
       
-      // Refresh data with error handling
-      try {
-        const [updatedSeances, updatedReevaluations] = await Promise.all([
-          seanceService.getAll().catch(e => {
-            console.error('Error refreshing seances:', e);
-            return seances; // Fall back to existing data
-          }),
-          reevaluationService.getAll().catch(e => {
-            console.error('Error refreshing reevaluations:', e);
-            return reevaluations; // Fall back to existing data
-          })
-        ]);
-        
-        // If user is MEDECIN, filter seances again
-        let filteredSeances = updatedSeances;
-        if (userRole === 'MEDECIN') {
-          const userData = JSON.parse(localStorage.getItem('user') || '{}');
-          const currentMedecinId = userData.user?.id;
-          if (currentMedecinId) {
-            filteredSeances = updatedSeances.filter(
-              seance => seance.medecinId === currentMedecinId
-            );
-          }
-        }
-        
-        setSeances(filteredSeances);
-        setReevaluations(updatedReevaluations);
-        
-        // Update seances without reevaluations
-        const reevaluationSeanceIds = updatedReevaluations.map(r => r.seanceId);
-        const availableSeances = filteredSeances.filter(s => !reevaluationSeanceIds.includes(s.id!));
-        setSeancesWithoutReevaluation(availableSeances);
-      } catch (refreshError) {
-        console.error('Error refreshing data:', refreshError);
-        setNetworkError('Error refreshing data after delete.');
+      // Refresh data immediately after successful deletion
+      const success = await fetchData();
+      if (!success) {
+        showFeedback('Séance deleted, but unable to refresh the list', 'info');
       }
     } catch (error: any) {
       console.error('Error deleting seance:', error);
-      setNetworkError(error.message || "Failed to delete séance");
+      showFeedback("Reloading page to refresh data...", 'info');
+      // Reload the page instead of showing network errors
+      setTimeout(() => {
+        window.location.reload();
+      }, 100);
     } finally {
       setIsLoading(false);
     }
@@ -686,53 +717,103 @@ const Seances: React.FC = () => {
     
     setIsLoading(true);
     try {
-      await reevaluationService.delete(id).catch(error => {
-        console.error('Error deleting reevaluation:', error);
-        throw new Error('Failed to delete réévaluation. Please try again later.');
-      });
+      await reevaluationService.delete(id);
       handleMenuClose();
+      showFeedback('Réévaluation deleted successfully');
       
-      // Refresh data with error handling
-      try {
-        const [updatedSeances, updatedReevaluations] = await Promise.all([
-          seanceService.getAll().catch(e => {
-            console.error('Error refreshing seances:', e);
-            return seances; // Fall back to existing data
-          }),
-          reevaluationService.getAll().catch(e => {
-            console.error('Error refreshing reevaluations:', e);
-            return reevaluations; // Fall back to existing data
-          })
-        ]);
-        
-        // If user is MEDECIN, filter seances again
-        let filteredSeances = updatedSeances;
-        if (userRole === 'MEDECIN') {
-          const userData = JSON.parse(localStorage.getItem('user') || '{}');
-          const currentMedecinId = userData.user?.id;
-          if (currentMedecinId) {
-            filteredSeances = updatedSeances.filter(
-              seance => seance.medecinId === currentMedecinId
-            );
-          }
-        }
-        
-        setSeances(filteredSeances);
-        setReevaluations(updatedReevaluations);
-        
-        // Update seances without reevaluations
-        const reevaluationSeanceIds = updatedReevaluations.map(r => r.seanceId);
-        const availableSeances = filteredSeances.filter(s => !reevaluationSeanceIds.includes(s.id!));
-        setSeancesWithoutReevaluation(availableSeances);
-      } catch (refreshError) {
-        console.error('Error refreshing data:', refreshError);
-        setNetworkError('Error refreshing data after delete.');
+      // Refresh data immediately after successful deletion
+      const success = await fetchData();
+      if (!success) {
+        showFeedback('Réévaluation deleted, but unable to refresh the list', 'info');
       }
     } catch (error: any) {
       console.error('Error deleting reevaluation:', error);
-      setNetworkError(error.message || "Failed to delete réévaluation");
+      showFeedback("Reloading page to refresh data...", 'info');
+      // Reload the page instead of showing network errors
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleConfirmDeleteSeance = (id: string) => {
+    setSeanceToDelete(id);
+    setOpenDeleteDialog(true);
+    handleMenuClose();
+  };
+
+  const handleCloseDeleteDialog = () => {
+    setOpenDeleteDialog(false);
+    setSeanceToDelete(null);
+  };
+
+  const handleConfirmedDeleteSeance = async () => {
+    if (!seanceToDelete) return;
+    
+    setIsLoading(true);
+    try {
+      const seanceToDeleteObj = seances.find(s => s.id === seanceToDelete);
+      
+      // Pass the seance type to use the correct endpoint
+      await seanceService.delete(seanceToDelete, seanceToDeleteObj?.type);
+      showFeedback('Séance deleted successfully');
+      
+      // Refresh data immediately after successful deletion
+      const success = await fetchData();
+      if (!success) {
+        showFeedback('Séance deleted, but unable to refresh the list', 'info');
+      }
+    } catch (error: any) {
+      console.error('Error deleting seance:', error);
+      showFeedback("Reloading page to refresh data...", 'info');
+      // Reload the page instead of showing network errors
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } finally {
+      setIsLoading(false);
+      setOpenDeleteDialog(false);
+      setSeanceToDelete(null);
+    }
+  };
+
+  const handleConfirmDeleteReevaluation = (id: string) => {
+    setReevaluationToDelete(id);
+    setOpenDeleteReevaluationDialog(true);
+    handleMenuClose();
+  };
+
+  const handleCloseDeleteReevaluationDialog = () => {
+    setOpenDeleteReevaluationDialog(false);
+    setReevaluationToDelete(null);
+  };
+
+  const handleConfirmedDeleteReevaluation = async () => {
+    if (!reevaluationToDelete) return;
+    
+    setIsLoading(true);
+    try {
+      await reevaluationService.delete(reevaluationToDelete);
+      showFeedback('Réévaluation deleted successfully');
+      
+      // Refresh data immediately after successful deletion
+      const success = await fetchData();
+      if (!success) {
+        showFeedback('Réévaluation deleted, but unable to refresh the list', 'info');
+      }
+    } catch (error: any) {
+      console.error('Error deleting reevaluation:', error);
+      showFeedback("Reloading page to refresh data...", 'info');
+      // Reload the page instead of showing network errors
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } finally {
+      setIsLoading(false);
+      setOpenDeleteReevaluationDialog(false);
+      setReevaluationToDelete(null);
     }
   };
 
@@ -741,7 +822,7 @@ const Seances: React.FC = () => {
     return seances.filter(seance => 
       seance.type?.toLowerCase().includes(searchQuery?.toLowerCase() || '') ||
       seance.patient?.nom?.toLowerCase().includes(searchQuery?.toLowerCase() || '') ||
-      seance.medecin?.userInfo?.firstName?.toLowerCase().includes(searchQuery?.toLowerCase() || '')
+      seance.medecin?.user?.name?.toLowerCase().includes(searchQuery?.toLowerCase() || '')
     );
   }, [seances, searchQuery]);
 
@@ -771,34 +852,28 @@ const Seances: React.FC = () => {
     return reevaluations.find(r => r.seanceId === seanceId);
   };
 
+  // Handle refresh button click with visual feedback
+  const handleRefreshClick = async () => {
+    setIsLoading(true);
+    const success = await fetchData();
+    if (success) {
+      showFeedback('Data refreshed successfully');
+    } else {
+      showFeedback('Failed to refresh data', 'error');
+    }
+    setIsLoading(false);
+  };
+
+  // Handle row expansion
+  const handleRowExpand = (seanceId: string) => {
+    setExpandedRows(prev => 
+      prev.includes(seanceId) ? prev.filter(id => id !== seanceId) : [...prev, seanceId]
+    );
+  };
+
   return (
     <Box sx={{ flexGrow: 1, p: 3 }}>
-      {/* Show network error message at the top if present */}
-      {networkError && (
-        <Box sx={{ 
-          mb: 4, 
-          p: 2, 
-          bgcolor: 'error.light', 
-          color: 'error.dark',
-          borderRadius: 1,
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center'
-        }}>
-          <Typography variant="body1">
-            {networkError}
-          </Typography>
-          <Button 
-            variant="outlined" 
-            color="error" 
-            size="small"
-            onClick={() => window.location.reload()}
-          >
-            Refresh
-          </Button>
-        </Box>
-      )}
-
+      
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
           Séances
@@ -848,15 +923,17 @@ const Seances: React.FC = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
           <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
-            {/* Only ADMIN and MEDECIN can export data */}
-            <RoleBasedAccess requiredRoles={['ADMIN', 'MEDECIN']}>
-              <Button variant="outlined" size="small" sx={{ borderRadius: 2 }}>
-                Export
-              </Button>
-            </RoleBasedAccess>
-            <Button variant="outlined" size="small" sx={{ borderRadius: 2 }}>
-              Filter
-            </Button>
+            {/* Refresh button for all users */}
+            <Tooltip title="Refresh data">
+              <IconButton 
+                onClick={handleRefreshClick}
+                size="small" 
+                disabled={isLoading}
+              >
+                <RefreshCw size={18} />
+              </IconButton>
+            </Tooltip>
+            
           </Box>
         </CardContent>
       </Card>
@@ -872,6 +949,7 @@ const Seances: React.FC = () => {
                 <TableCell>Médecin</TableCell>
                 <TableCell>Réévaluation</TableCell>
                 <TableCell align="right">Actions</TableCell>
+                <TableCell></TableCell>
               </TableRow>
             </TableHead>
             
@@ -894,85 +972,160 @@ const Seances: React.FC = () => {
                 filteredSeances
                   .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                   .map((seance) => (
-                    <TableRow
-                      key={seance.id}
-                      sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
-                    >
-                      <TableCell>{seance.type}</TableCell>
-                      <TableCell>
-                        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                          <Calendar size={14} style={{ marginRight: 8 }} />
-                          {format(new Date(seance.date), 'dd/MM/yyyy')}
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        {seance.patient ? 
-                          `${seance.patient.nom} ${seance.patient.prenom}` : 
-                          'N/A'}
-                      </TableCell>
-                      <TableCell>
-                        {seance.medecin?.user? 
-                          `${seance.medecin.user.name}` : 
-                          'N/A'}
-                      </TableCell>
-                      <TableCell>
-                        {hasReevaluation(seance.id!) ? (
-                          <Chip 
-                            label="Réévaluation" 
-                            color="success" 
-                            size="small"
-                            onClick={() => {
-                              const reevaluation = getReevaluationForSeance(seance.id!);
-                              if (reevaluation) {
-                                handleOpenReevaluationDialog(reevaluation);
-                              }
-                            }}
-                          />
-                        ) : (
-                          <RoleBasedAccess requiredRoles={['ADMIN', 'MEDECIN']}>
-                            <Tooltip title={seance.type === 'REEVALUATION' ? "Ajouter une réévaluation" : "Réévaluation disponible uniquement pour type REEVALUATION"}>
-                              <span>
-                                <IconButton 
-                                  color="primary" 
-                                  size="small"
-                                  onClick={() => handleAddReevaluationForSeance(seance.id!)}
-                                  disabled={
-                                    isLoading || 
-                                    seance.type !== 'REEVALUATION' || 
-                                    (userRole === 'MEDECIN' && seance.medecinId !== (function() {
-                                      const userData = JSON.parse(localStorage.getItem('user') || '{}');
-                                      return userData.user?.id;
-                                    })())
-                                  }
-                                >
-                                  <FilePlus size={16} />
-                                </IconButton>
-                              </span>
+                    <React.Fragment key={seance.id}>
+                      <TableRow
+                        sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
+                      >
+                        <TableCell>{seance.type}</TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                            <Calendar size={14} style={{ marginRight: 8 }} />
+                            {format(new Date(seance.date), 'dd/MM/yyyy')}
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          {seance.patient ? 
+                            `${seance.patient.nom} ${seance.patient.prenom}` : 
+                            'N/A'}
+                        </TableCell>
+                        <TableCell>
+                          {seance.medecin?.user? 
+                            `${seance.medecin.user.name}` : 
+                            'N/A'}
+                            
+                        </TableCell>
+                        <TableCell>
+                          {hasReevaluation(seance.id!) ? (
+                            <Chip 
+                              label="Réévaluation" 
+                              color="success" 
+                              size="small"
+                              onClick={() => {
+                                const reevaluation = getReevaluationForSeance(seance.id!);
+                                if (reevaluation) {
+                                  handleOpenReevaluationDialog(reevaluation);
+                                }
+                              }}
+                            />
+                          ) : (
+                            <RoleBasedAccess requiredRoles={['ADMIN', 'MEDECIN']}>
+                              <Tooltip title={seance.type === 'REEVALUATION' ? "Ajouter une réévaluation" : "Réévaluation disponible uniquement pour type REEVALUATION"}>
+                                <span>
+                                  <IconButton 
+                                    color="primary" 
+                                    size="small"
+                                    onClick={() => handleAddReevaluationForSeance(seance.id!)}
+                                    disabled={
+                                      isLoading || 
+                                      seance.type !== 'REEVALUATION' ||
+                                      (userRole === 'MEDECIN' && seance.medecinId !== (function() {
+                                        const userData = JSON.parse(localStorage.getItem('user') || '{}');
+                                        return userData.user?.id;
+                                      })())
+                                    }
+                                  >
+                                    <FilePlus size={16} />
+                                  </IconButton>
+                                </span>
+                              </Tooltip>
+                            </RoleBasedAccess>
+                          )}
+                        </TableCell>
+                        <TableCell align="right">
+                          {canOnlyView() ? (
+                            <Tooltip title="View Details">
+                              <IconButton size="small">
+                                <Eye size={18} />
+                              </IconButton>
                             </Tooltip>
-                          </RoleBasedAccess>
-                        )}
-                      </TableCell>
-                      <TableCell align="right">
-                        {canOnlyView() ? (
-                          <Tooltip title="View Details">
-                            <IconButton size="small">
-                              <Eye size={18} />
+                          ) : (
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                              
+                              
+                              {/* Delete button */}
+                              <Tooltip title="Delete Séance">
+                                <IconButton 
+                                  size="small"
+                                  color="error"
+                                  onClick={() => handleConfirmDeleteSeance(seance.id!)}
+                                  disabled={isLoading || (userRole === 'MEDECIN' && seance.medecinId !== (function() {
+                                    const userData = JSON.parse(localStorage.getItem('user') || '{}');
+                                    return userData.user?.id;
+                                  })())}
+                                >
+                                  <Trash2 size={16} />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {hasReevaluation(seance.id!) && (
+                            <IconButton
+                              size="small"
+                              onClick={() => handleRowExpand(seance.id!)}
+                            >
+                              {expandedRows.includes(seance.id!) ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                             </IconButton>
-                          </Tooltip>
-                        ) : (
-                          <IconButton 
-                            size="small" 
-                            onClick={(event) => handleMenuClick(event, seance.id!)}
-                            disabled={isLoading || (userRole === 'MEDECIN' && seance.medecinId !== (function() {
-                                  const userData = JSON.parse(localStorage.getItem('user') || '{}');
-                                  return userData.user?.id;
-                                })())}
-                          >
-                            <MoreVertical size={18} />
-                          </IconButton>
-                        )}
-                      </TableCell>
-                    </TableRow>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                      {expandedRows.includes(seance.id!) && hasReevaluation(seance.id!) && (
+                        <TableRow>
+                          <TableCell colSpan={7}>
+                            <Collapse in={expandedRows.includes(seance.id!)} timeout="auto" unmountOnExit>
+                              <Box sx={{ margin: 2 }}>
+                                <Typography variant="h6" gutterBottom component="div">
+                                  Réévaluation Details
+                                </Typography>
+                                <Grid container spacing={2}>
+                                  <Grid item xs={12} sm={6}>
+                                    <Typography variant="body2" gutterBottom>
+                                      <strong>Indice de Plaque:</strong> {getReevaluationForSeance(seance.id!)?.indiceDePlaque || 'N/A'}
+                                    </Typography>
+                                  </Grid>
+                                  <Grid item xs={12} sm={6}>
+                                    <Typography variant="body2" gutterBottom>
+                                      <strong>Indice Gingivale:</strong> {getReevaluationForSeance(seance.id!)?.indiceGingivale || 'N/A'}
+                                    </Typography>
+                                  </Grid>
+                                  <Grid item xs={12}>
+                                    <Divider sx={{ my: 2 }} />
+                                  </Grid>
+                                  <Grid item xs={12}>
+                                    <Typography variant="body2" gutterBottom>
+                                      <strong>Photo:</strong>
+                                    </Typography>
+                                    {getReevaluationForSeance(seance.id!)?.sondagePhoto ? (
+                                      <Box 
+                                        sx={{ 
+                                          maxWidth: '100%',
+                                          mt: 1,
+                                          border: '1px solid #e0e0e0',
+                                          borderRadius: 1,
+                                          p: 1,
+                                          display: 'inline-block'
+                                        }}
+                                      >
+                                        <img
+                                          src={`http://localhost:3000${getReevaluationForSeance(seance.id!)?.sondagePhoto}`}
+                                          alt="Sondage"
+                                          style={{ maxWidth: '100%', maxHeight: '300px' }}
+                                        />
+                                      </Box>
+                                    ) : (
+                                      <Typography variant="body2" color="textSecondary" sx={{ mt: 1 }}>
+                                        No photo available
+                                      </Typography>
+                                    )}
+                                  </Grid>
+                                </Grid>
+                              </Box>
+                            </Collapse>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </React.Fragment>
                   ))
               )}
             </TableBody>
@@ -1025,7 +1178,7 @@ const Seances: React.FC = () => {
                 Edit
               </MenuItem>
               
-              <MenuItem onClick={() => selectedSeanceId && handleDelete(selectedSeanceId)} sx={{ color: 'error.main' }}>
+              <MenuItem onClick={() => selectedSeanceId && handleConfirmDeleteSeance(selectedSeanceId)} sx={{ color: 'error.main' }}>
                 <Trash2 size={16} style={{ marginRight: 8 }} />
                 Delete
               </MenuItem>
@@ -1044,7 +1197,7 @@ const Seances: React.FC = () => {
                 <Edit size={16} style={{ marginRight: 8 }} />
                 Edit
               </MenuItem>
-              <MenuItem onClick={() => selectedReevaluationId && handleReevaluationDelete(selectedReevaluationId)} sx={{ color: 'error.main' }}>
+              <MenuItem onClick={() => selectedReevaluationId && handleConfirmDeleteReevaluation(selectedReevaluationId)} sx={{ color: 'error.main' }}>
                 <Trash2 size={16} style={{ marginRight: 8 }} />
                 Delete
               </MenuItem>
@@ -1059,6 +1212,8 @@ const Seances: React.FC = () => {
           <DialogTitle>{isEditing ? 'Edit Séance' : 'Add New Séance'}</DialogTitle>
           <form onSubmit={handleSubmit}>
             <DialogContent>
+             
+              
               <LocalizationProvider dateAdapter={AdapterDateFns}>
                 <DatePicker
                   label="Date"
@@ -1213,19 +1368,6 @@ const Seances: React.FC = () => {
                 </Box>
               </Collapse>
               
-              {/* Show error message if present */}
-              {error && (
-                <Box sx={{ 
-                  mt: 2, 
-                  p: 2, 
-                  bgcolor: 'error.light', 
-                  color: 'error.dark',
-                  borderRadius: 1,
-                  fontSize: '0.875rem'
-                }}>
-                  {error}
-                </Box>
-              )}
             </DialogContent>
             <DialogActions>
               <Button onClick={handleCloseDialog} disabled={isLoading}>Cancel</Button>
@@ -1247,6 +1389,20 @@ const Seances: React.FC = () => {
           <DialogTitle>{isReevaluationEditing ? 'Edit Réévaluation' : 'Add New Réévaluation'}</DialogTitle>
           <form onSubmit={handleReevaluationSubmit}>
             <DialogContent>
+              {/* Show error message if present */}
+              {error && (
+                <Box sx={{ 
+                  mb: 2,
+                  p: 1.5, 
+                  bgcolor: 'error.light', 
+                  color: 'error.dark',
+                  borderRadius: 1,
+                  fontSize: '0.875rem'
+                }}>
+                  {error}
+                </Box>
+              )}
+              
               <FormControl fullWidth sx={{ mb: 2 }}>
                 <InputLabel>Séance</InputLabel>
                 <Select
@@ -1348,20 +1504,6 @@ const Seances: React.FC = () => {
                   </Typography>
                 )}
               </Box>
-              
-              {/* Show error message if present */}
-              {error && (
-                <Box sx={{ 
-                  mt: 2, 
-                  p: 2, 
-                  bgcolor: 'error.light', 
-                  color: 'error.dark',
-                  borderRadius: 1,
-                  fontSize: '0.875rem'
-                }}>
-                  {error}
-                </Box>
-              )}
             </DialogContent>
             <DialogActions>
               <Button onClick={handleCloseReevaluationDialog} disabled={isLoading}>Cancel</Button>
@@ -1376,6 +1518,97 @@ const Seances: React.FC = () => {
           </form>
         </Dialog>
       </RoleBasedAccess>
+
+      {/* Delete confirmation dialogs */}
+      <Dialog
+        open={openDeleteDialog}
+        onClose={handleCloseDeleteDialog}
+        aria-labelledby="delete-seance-dialog-title"
+        aria-describedby="delete-seance-dialog-description"
+      >
+        <DialogTitle id="delete-seance-dialog-title">
+          Confirm Deletion
+        </DialogTitle>
+        <DialogContent>
+          <Typography id="delete-seance-dialog-description">
+            Are you sure you want to delete this séance? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDeleteDialog} color="primary">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmedDeleteSeance} 
+            color="error" 
+            variant="contained"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={openDeleteReevaluationDialog}
+        onClose={handleCloseDeleteReevaluationDialog}
+        aria-labelledby="delete-reevaluation-dialog-title"
+        aria-describedby="delete-reevaluation-dialog-description"
+      >
+        <DialogTitle id="delete-reevaluation-dialog-title">
+          Confirm Deletion
+        </DialogTitle>
+        <DialogContent>
+          <Typography id="delete-reevaluation-dialog-description">
+            Are you sure you want to delete this reevaluation? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDeleteReevaluationDialog} color="primary">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmedDeleteReevaluation} 
+            color="error" 
+            variant="contained"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
+      {/* Toast notification for providing user feedback */}
+      <Snackbar
+        open={feedbackOpen}
+        autoHideDuration={6000}
+        onClose={handleCloseFeedback}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        sx={{
+          '& .MuiPaper-root': {
+            backgroundColor: 
+              feedbackType === 'success' ? 'success.main' : 
+              feedbackType === 'error' ? 'error.main' : 'info.main',
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            pr: 1
+          }
+        }}
+        message={
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {feedbackType === 'success' && <CheckCircle size={20} />}
+            {feedbackType === 'error' && <AlertCircle size={20} />}
+            {feedbackType === 'info' && <AlertCircle size={20} />}
+            {feedbackMessage}
+          </Box>
+        }
+        action={
+          <IconButton size="small" color="inherit" onClick={handleCloseFeedback}>
+            <X size={18} />
+          </IconButton>
+        }
+      />
     </Box>
   );
 };

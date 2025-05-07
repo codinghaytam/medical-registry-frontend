@@ -54,16 +54,7 @@ const Header: React.FC<HeaderProps> = ({ handleDrawerToggle }) => {
 
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
           <ThemeToggle />
-          <IconButton color="inherit">
-            <Badge badgeContent={4} color="error">
-              <Mail size={22} />
-            </Badge>
-          </IconButton>
-          <IconButton color="inherit" sx={{ ml: 1 }}>
-            <Badge badgeContent={7} color="error">
-              <Bell size={22} />
-            </Badge>
-          </IconButton>
+          
           <Box sx={{ ml: 2, display: 'flex', alignItems: 'center' }}>
             
             <Box sx={{ ml: 1, display: { xs: 'none', sm: 'block' } }}>

@@ -62,6 +62,9 @@ importers:
       react-router-dom:
         specifier: ^6.22.1
         version: 6.30.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      tauri-plugin-app-exit-api:
+        specifier: '0.1'
+        version: 0.1.1
     devDependencies:
       '@tauri-apps/cli':
         specifier: ^2
@@ -1709,6 +1712,9 @@ packages:
   tar-stream@2.2.0:
     resolution: {integrity: sha512-ujeqbceABgwMZxEJnk2HDY2DlnUZ+9oEcb1KzTVfYHio0UE6dG71n60d8D2I4qNvleWrrXpmjpt7vZeF1LnMZQ==}
     engines: {node: '>=6'}
+
+  tauri-plugin-app-exit-api@0.1.1:
+    resolution: {integrity: sha512-fMYfFkhXkxdkVRoPrBahXxm7LvMsGAo8I2oCwDkT1wDaKm0xGHOpIjYbefNGuQorQ6q8LwDKIkmFGEbbsYDMeg==}
 
   tinyglobby@0.2.13:
     resolution: {integrity: sha512-mEwzpUgrLySlveBwEVDMKk5B57bhLPYovRfPAXD5gA/98Opn0rCDj3GtLwFvCvH5RK9uPCExUROW5NjDwvqkxw==}
@@ -3449,6 +3455,10 @@ snapshots:
       fs-constants: 1.0.0
       inherits: 2.0.4
       readable-stream: 3.6.2
+
+  tauri-plugin-app-exit-api@0.1.1:
+    dependencies:
+      '@tauri-apps/api': 2.5.0
 
   tinyglobby@0.2.13:
     dependencies:

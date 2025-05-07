@@ -2166,6 +2166,7 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
+ "tauri-plugin-app-exit",
  "tauri-plugin-http",
  "tauri-plugin-opener",
 ]
@@ -3958,6 +3959,18 @@ dependencies = [
  "tauri-utils",
  "toml",
  "walkdir",
+]
+
+[[package]]
+name = "tauri-plugin-app-exit"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6496d4e8b0419300a774e2294809e770dd97a8344397824a20d6cb7e384a9771"
+dependencies = [
+ "serde",
+ "tauri",
+ "tauri-plugin",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

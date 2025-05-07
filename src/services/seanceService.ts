@@ -49,8 +49,8 @@ export const seanceService = {
   },
 
   create: async (data: SeanceData) => {
-    // Convert date to ISO string for JSON serialization
-    let formattedData: any = {
+    // Format date object for API
+    const formattedData = {
       ...data,
       date: data.date instanceof Date ? data.date.toISOString() : data.date
     };
@@ -69,21 +69,17 @@ export const seanceService = {
       // If there's a sondagePhoto that's a File object, add it
       if (data.Reevaluation.sondagePhoto instanceof File) {
         reevalData.append('sondagePhoto', data.Reevaluation.sondagePhoto);
+        console.log("Adding file to reevaluation FormData:", data.Reevaluation.sondagePhoto.name);
       }
       
+      // Create the reevaluation and return the result
       return reevaluationService.create(reevalData);
     }
     
     // Otherwise use the regular seance endpoint
     try {
-      console.log('Sending seance data:', JSON.stringify(formattedData, null, 2));
       
-      // Make sure we're not sending Reevaluation data for non-reevaluation seances
-      if (data.type !== 'REEVALUATION') {
-        // Create a new object without the Reevaluation property
-        const { Reevaluation, ...seanceDataOnly } = formattedData;
-        formattedData = seanceDataOnly;
-      }
+      
       
       const response = await fetch(`${BASE_URL}/seance`, {
         method: 'POST',

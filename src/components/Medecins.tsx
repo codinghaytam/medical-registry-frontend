@@ -32,6 +32,7 @@ import {
   Alert,
   Snackbar,
   CircularProgress,
+  Tooltip,
 } from '@mui/material';
 import {
   Search,
@@ -50,6 +51,9 @@ const Medecins: React.FC = () => {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [selectedMedecinId, setSelectedMedecinId] = useState<string | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
+  // Add delete confirmation dialog state
+  const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
+  const [medecinToDelete, setMedecinToDelete] = useState<string | null>(null);
   const [medecins, setMedecins] = useState<MedecinData[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [newMedecin, setNewMedecin] = useState<CreateMedecinData & { firstName?: string; surname?: string }>({
@@ -220,6 +224,39 @@ const Medecins: React.FC = () => {
     }
   };
 
+  // Show delete confirmation dialog
+  const handleConfirmDelete = (id: string) => {
+    setMedecinToDelete(id);
+    setOpenDeleteDialog(true);
+    handleMenuClose();
+  };
+
+  // Close delete confirmation dialog
+  const handleCloseDeleteDialog = () => {
+    setOpenDeleteDialog(false);
+    setMedecinToDelete(null);
+  };
+
+  // Proceed with delete after confirmation
+  const handleConfirmedDelete = async () => {
+    if (!medecinToDelete) return;
+    
+    setIsLoading(true);
+    setError(null);
+    try {
+      await medecinService.delete(medecinToDelete);
+      // Refresh medecins list after deletion
+      fetchMedecins();
+    } catch (error: any) {
+      console.error('Failed to delete medecin:', error);
+      setNetworkError(error.message || "Failed to delete doctor");
+    } finally {
+      setIsLoading(false);
+      setOpenDeleteDialog(false);
+      setMedecinToDelete(null);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     setIsLoading(true);
     setError(null);
@@ -276,15 +313,26 @@ const Medecins: React.FC = () => {
         <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
           Médecins
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<Plus size={18} />}
-          sx={{ borderRadius: 2 }}
-          onClick={() => handleOpenDialog()}
-          disabled={isLoading}
-        >
-          Add New Doctor
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+            <Tooltip title="Refresh médecins list">
+              <IconButton 
+                size="small" 
+                onClick={fetchMedecins}
+                disabled={isLoading}
+              >
+                <RefreshCw size={16} />
+              </IconButton>
+            </Tooltip>
+            <Button 
+              variant="contained" 
+              startIcon={<Plus size={18} />}
+              sx={{ borderRadius: 2 }}
+              onClick={handleOpenDialog}
+              disabled={isLoading}
+            >
+              Add New Médecin
+            </Button>
+          </Box>
       </Box>
 
       <Card sx={{ mb: 4 }}>
@@ -426,7 +474,7 @@ const Medecins: React.FC = () => {
           Edit
         </MenuItem>
         <MenuItem
-          onClick={() => selectedMedecinId && handleDelete(selectedMedecinId)}
+          onClick={() => selectedMedecinId && handleConfirmDelete(selectedMedecinId)}
           sx={{ color: 'error.main' }}
           disabled={isLoading}
         >
@@ -434,6 +482,36 @@ const Medecins: React.FC = () => {
           Delete
         </MenuItem>
       </Menu>
+
+      {/* Delete confirmation dialog */}
+      <Dialog
+        open={openDeleteDialog}
+        onClose={handleCloseDeleteDialog}
+        aria-labelledby="delete-dialog-title"
+        aria-describedby="delete-dialog-description"
+      >
+        <DialogTitle id="delete-dialog-title">
+          Confirm Deletion
+        </DialogTitle>
+        <DialogContent>
+          <Typography id="delete-dialog-description">
+            Are you sure you want to delete this doctor? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDeleteDialog} color="primary">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmedDelete} 
+            color="error" 
+            variant="contained"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
         <DialogTitle>{isEditing ? 'Edit Doctor' : 'Add New Doctor'}</DialogTitle>

@@ -90,7 +90,7 @@ const Dashboard: React.FC = () => {
     setIsLoading(true);
     try {
       // Get the medecin ID from localStorage
-      const medecinId = JSON.parse(localStorage.getItem('user') || '{}').id;
+      const medecinId = JSON.parse(localStorage.getItem('user') || '{}').user.id;
       
       if (!medecinId) {
         console.error('Medecin ID not found in local storage');
@@ -147,71 +147,13 @@ const Dashboard: React.FC = () => {
       <Profile></Profile>
       
       {/* Role information banner */}
-      <Card sx={{ mb: 4, bgcolor: theme.palette.primary.light + '20' }}>
-        <CardContent>
-          <Typography variant="h6">
-            Welcome, {(() => {
-              // Get user data from localStorage
-              const userData = JSON.parse(localStorage.getItem('user') || '{}');
-              
-              // Format the name based on user role
-              let displayName = '';
-              
-              if (userRole === 'MEDECIN' && userData.user?.user?.name) {
-                displayName = `Dr. ${userData.user.name}`;
-              } else if (userRole === 'MEDECIN' && userData.user?.profession) {
-                displayName = `${userRole} (${userData.user.profession})`;
-              } else if (userRole === 'ETUDIANT' && userData.user?.name) {
-                displayName = userData.user.name;
-              } else if (userRole === 'ADMIN' && userData.name) {
-                // Admin data is stored directly, not nested in user property
-                displayName = userData.name;
-              } else {
-                displayName = userRole;
-              }
-              
-              return displayName;
-            })()}
-          </Typography>
-          <Typography variant="body2">
-            {userRole === 'ADMIN' && "You have full access to all features."}
-            {userRole === 'MEDECIN' && "You can view and modify data related to your profession."}
-            {userRole === 'ETUDIANT' && "You have view-only access to the application."}
-          </Typography>
-        </CardContent>
-      </Card>
+      
       
       {/* Stats Cards */}
       
-      {/* Admin-only section */}
-      <RoleBasedAccess requiredRoles="ADMIN">
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="h5" sx={{ mb: 2 }}>Admin Controls</Typography>
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={4}>
-              <Button variant="contained" color="primary" fullWidth>
-                Manage System Settings
-              </Button>
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <Button variant="contained" color="secondary" fullWidth>
-                User Management
-              </Button>
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <Button variant="contained" color="error" fullWidth>
-                System Logs
-              </Button>
-            </Grid>
-          </Grid>
-        </Box>
-      </RoleBasedAccess>
+      
 
-      {/* Role Debug Information - temporary for troubleshooting */}
-      <RoleBasedAccess requiredRoles="ADMIN">
-        <RoleDebugInfo />
-      </RoleBasedAccess>
-
+      
       {/* Medecin-only patients section */}
       <RoleBasedAccess requiredRoles="MEDECIN">
         <Box sx={{ mb: 4 }}>

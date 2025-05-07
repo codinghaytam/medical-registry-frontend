@@ -32,6 +32,7 @@ import {
   Chip,
   Alert,
   Collapse,
+  Snackbar
 } from '@mui/material';
 import { 
   Search, 
@@ -40,20 +41,32 @@ import {
   Edit, 
   Trash2,
   User,
-  RefreshCw
+  RefreshCw,
+  CheckCircle,
+  AlertCircle,
+  X
 } from 'lucide-react';
 import { fetch } from '@tauri-apps/plugin-http';
 import { patientService, PatientData } from '../services/patientService';
 import { getUserRole } from '../utiles/RoleAccess';
+
+// Define feedback type for consistent notification styling
+type FeedbackType = 'success' | 'error' | 'info';
 
 const Patients: React.FC = () => {
   const navigate = useNavigate();
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
+  // Add delete confirmation dialog state
+  const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
+  const [patientToDelete, setPatientToDelete] = useState<string | null>(null);
+  // Add states for transfer functionality
+  const [openTransferDialog, setOpenTransferDialog] = useState(false);
+  const [patientToTransfer, setPatientToTransfer] = useState<string | null>(null);
   const [patients, setPatients] = useState<any[]>([]);
   const [Motifs, setMotifs] = useState<string[]>([]);
   const [typeMastications, setTypeMastications] = useState<string[]>([]);
@@ -63,6 +76,12 @@ const Patients: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [userRole] = useState(getUserRole());
   const [userProfession, setUserProfession] = useState<string | null>(null);
+  
+  // New state for feedback notifications
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [feedbackType, setFeedbackType] = useState<FeedbackType>('success');
+  
   const [newPatient, setNewPatient] = useState<PatientData>({
     nom: '',
     prenom: '',
@@ -79,6 +98,18 @@ const Patients: React.FC = () => {
   });
 
   const [searchQuery, setSearchQuery] = useState<string>('');
+  
+  // Show feedback notification
+  const showFeedback = (message: string, type: FeedbackType = 'success') => {
+    setFeedbackMessage(message);
+    setFeedbackType(type);
+    setFeedbackOpen(true);
+  };
+  
+  // Close feedback notification
+  const handleCloseFeedback = () => {
+    setFeedbackOpen(false);
+  };
 
   // Get the current user's profession if they are a médecin
   useEffect(() => {
@@ -93,10 +124,7 @@ const Patients: React.FC = () => {
                             (userData.user && userData.user.profession) ||
                             '';
           
-          console.log('Found profession in localStorage:', profession);
           setUserProfession(profession);
-        } else {
-          console.log('No user data found in localStorage');
         }
       } catch (error) {
         console.error('Error getting user profession:', error);
@@ -130,7 +158,7 @@ const Patients: React.FC = () => {
     setError(null);
     try {
       // Fetch the selected patient data
-      const patientData = await patientService.getById(selectedUserId.toString());
+      const patientData = await patientService.getById(selectedUserId);
       
       // Set it to the form
       setNewPatient(patientData);
@@ -140,8 +168,9 @@ const Patients: React.FC = () => {
       
       // Close menu
       handleMenuClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch patient for editing:', error);
+      showFeedback('Failed to fetch patient data. Please try again.', 'error');
       setError('Failed to fetch patient data. Please try again.');
     } finally {
       setIsLoading(false);
@@ -191,49 +220,147 @@ const Patients: React.FC = () => {
       if (newPatient.id) {
         // Update existing patient
         await patientService.update(newPatient.id.toString(), newPatient);
+        showFeedback('Patient updated successfully');
       } else {
         // Create new patient
         await patientService.create(newPatient);
+        showFeedback('New patient created successfully');
       }
       handleCloseDialog();
       // Refresh patients list after successful creation/update
-      fetchPatients();
+      const success = await fetchPatients();
+      if (!success) {
+        showFeedback('Patient saved, but unable to refresh the list', 'info');
+      }
     } catch (error: any) {
       console.error('Failed to save patient:', error);
       // Set error message for display
       if (error.response) {
         try {
           const errorData = await error.response.json().catch(() => null);
-          setError(errorData?.error || error.message || "Une erreur s'est produite lors de l'enregistrement du patient");
+          const errorMsg = errorData?.error || error.message || "Une erreur s'est produite lors de l'enregistrement du patient";
+          setError(errorMsg);
+          showFeedback(errorMsg, 'error');
         } catch (e) {
-          setError(error.message || "Une erreur s'est produite lors de l'enregistrement du patient");
+          const errorMsg = error.message || "Une erreur s'est produite lors de l'enregistrement du patient";
+          setError(errorMsg);
+          showFeedback(errorMsg, 'error');
         }
       } else {
-        setError(error.message || "Une erreur s'est produite lors de l'enregistrement du patient");
+        const errorMsg = error.message || "Une erreur s'est produite lors de l'enregistrement du patient";
+        setError(errorMsg);
+        showFeedback(errorMsg, 'error');
       }
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
+  // Show delete confirmation dialog
+  const handleConfirmDelete = (id: string) => {
+    setPatientToDelete(id);
+    setOpenDeleteDialog(true);
+    handleMenuClose();
+  };
+
+  // Close delete confirmation dialog
+  const handleCloseDeleteDialog = () => {
+    setOpenDeleteDialog(false);
+    setPatientToDelete(null);
+  };
+
+  // Proceed with delete after confirmation
+  const handleConfirmedDelete = async () => {
+    if (!patientToDelete) return;
+    
     setIsLoading(true);
     setError(null);
     try {
-      await patientService.delete(id);
-      handleMenuClose();
+      await patientService.delete(patientToDelete);
+      showFeedback('Patient deleted successfully');
+      
       // Refresh patients list after deletion
-      fetchPatients();
+      const success = await fetchPatients();
+      if (!success) {
+        showFeedback('Patient deleted, but unable to refresh the list', 'info');
+      }
     } catch (error: any) {
       console.error('Failed to delete patient:', error);
+      showFeedback(error.message || "Failed to delete patient", 'error');
       setNetworkError(error.message || "Failed to delete patient");
     } finally {
       setIsLoading(false);
+      setOpenDeleteDialog(false);
+      setPatientToDelete(null);
+    }
+  };
+
+  // Show transfer confirmation dialog
+  const handleConfirmTransfer = (id: string) => {
+    setPatientToTransfer(id);
+    setOpenTransferDialog(true);
+    handleMenuClose();
+  };
+
+  // Close transfer confirmation dialog
+  const handleCloseTransferDialog = () => {
+    setOpenTransferDialog(false);
+    setPatientToTransfer(null);
+  };
+
+  // Proceed with transfer after confirmation
+  const handleConfirmedTransfer = async () => {
+    if (!patientToTransfer) return;
+    
+    setIsLoading(true);
+    setError(null);
+    try {
+      // Get current user's ID (for medecin) or the first orthodontaire medecin for admin
+      let medecinId = '';
+      
+      if (userRole === 'MEDECIN') {
+        const userData = JSON.parse(localStorage.getItem('user') || '{}');
+        medecinId = userData.id || userData.user?.id;
+      } else {
+        // For ADMIN, we need to choose a medecin with ORTHODONTAIRE profession
+        // This would be better with a dropdown selection, but for simplicity we'll use the first available
+        const response = await fetch('http://localhost:3000/medecin');
+        const medecins = await response.json();
+        const orthodontist = medecins.find((m: any) => m.profession === 'ORTHODONTAIRE');
+        
+        if (orthodontist) {
+          medecinId = orthodontist.id;
+        } else {
+          throw new Error('No orthodontist found in the system. Please add one first.');
+        }
+      }
+      
+      if (!medecinId) {
+        throw new Error('Could not determine the médecin ID for transfer');
+      }
+      
+      // Call the transfer service
+      await patientService.transferParoToOrtho(patientToTransfer, medecinId);
+      showFeedback('Patient transferred to Orthodontaire department successfully');
+      
+      // Refresh patients list after transfer
+      const success = await fetchPatients();
+      if (!success) {
+        showFeedback('Patient transferred, but unable to refresh the list', 'info');
+      }
+    } catch (error: any) {
+      console.error('Failed to transfer patient:', error);
+      showFeedback(error.message || "Failed to transfer patient", 'error');
+      setNetworkError(error.message || "Failed to transfer patient");
+    } finally {
+      setIsLoading(false);
+      setOpenTransferDialog(false);
+      setPatientToTransfer(null);
     }
   };
 
   // Function to fetch patients data
-  const fetchPatients = async () => {
+  const fetchPatients = async (): Promise<boolean> => {
     setIsLoading(true);
     setNetworkError(null);
     try {
@@ -250,11 +377,13 @@ const Patients: React.FC = () => {
         // Admin or other roles see all patients
         setPatients(data);
       }
+      return true;
     } catch (error: any) {
       console.error('Error fetching patients:', error);
       setNetworkError(error.message || 'Failed to load patients. Please try again.');
       // Still set empty array instead of failing completely
       setPatients([]);
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -269,6 +398,17 @@ const Patients: React.FC = () => {
     fetchPatients();
   }, [userProfession]); // Refetch when userProfession changes
   
+  // Handle refresh button click with visual feedback
+  const handleRefreshClick = async () => {
+    setIsLoading(true);
+    const success = await fetchPatients();
+    if (success) {
+      showFeedback('Data refreshed successfully');
+    } else {
+      showFeedback('Failed to refresh data', 'error');
+    }
+    setIsLoading(false);
+  };
 
   useEffect(() => {
     const fetchEnums = async () => {
@@ -324,7 +464,8 @@ const Patients: React.FC = () => {
             variant="outlined" 
             color="error" 
             size="small"
-            onClick={() => window.location.reload()}
+            onClick={() => handleRefreshClick()}
+            disabled={isLoading}
           >
             Refresh
           </Button>
@@ -381,16 +522,15 @@ const Patients: React.FC = () => {
           />
           <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
             <Tooltip title="Refresh patients list">
-              <IconButton onClick={fetchPatients} size="small" disabled={isLoading}>
+              <IconButton 
+                onClick={handleRefreshClick} 
+                size="small" 
+                disabled={isLoading}
+              >
                 <RefreshCw size={18} />
               </IconButton>
             </Tooltip>
-            <Button variant="outlined" size="small" sx={{ borderRadius: 2 }}>
-              Export
-            </Button>
-            <Button variant="outlined" size="small" sx={{ borderRadius: 2 }}>
-              Filter
-            </Button>
+           
           </Box>
         </CardContent>
       </Card>
@@ -551,11 +691,91 @@ const Patients: React.FC = () => {
           <Edit size={16} style={{ marginRight: 8 }} />
           Edit
         </MenuItem>
-        <MenuItem onClick={() => selectedUserId && handleDelete(selectedUserId.toString())} sx={{ color: 'error.main' }}>
+        {/* Add transfer option - only show for PARODONTAIRE patients */}
+        {selectedUserId && patients.find(p => p.id === selectedUserId)?.State === 'PARODONTAIRE' && (
+          <MenuItem 
+            onClick={() => selectedUserId && handleConfirmTransfer(selectedUserId)}
+            sx={{ color: 'secondary.main' }}
+          >
+            <IconButton size="small" color="secondary" sx={{ mr: 1, p: 0 }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M17 8L21 12M21 12L17 16M21 12H3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </IconButton>
+            Transfer to Orthodontaire
+          </MenuItem>
+        )}
+        <MenuItem 
+          onClick={() => selectedUserId && handleConfirmDelete(selectedUserId)} 
+          sx={{ color: 'error.main' }}
+        >
           <Trash2 size={16} style={{ marginRight: 8 }} />
           Delete
         </MenuItem>
       </Menu>
+
+      {/* Add delete confirmation dialog */}
+      <Dialog
+        open={openDeleteDialog}
+        onClose={handleCloseDeleteDialog}
+        aria-labelledby="delete-dialog-title"
+        aria-describedby="delete-dialog-description"
+      >
+        <DialogTitle id="delete-dialog-title">
+          Confirm Deletion
+        </DialogTitle>
+        <DialogContent>
+          <Typography id="delete-dialog-description">
+            Are you sure you want to delete this patient? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDeleteDialog} color="primary">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmedDelete} 
+            color="error" 
+            variant="contained"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add transfer confirmation dialog */}
+      <Dialog
+        open={openTransferDialog}
+        onClose={handleCloseTransferDialog}
+        aria-labelledby="transfer-dialog-title"
+        aria-describedby="transfer-dialog-description"
+      >
+        <DialogTitle id="transfer-dialog-title">
+          Confirm Patient Transfer
+        </DialogTitle>
+        <DialogContent>
+          <Typography id="transfer-dialog-description" paragraph>
+            Are you sure you want to transfer this patient from the Parodontaire department to the Orthodontaire department?
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            This action will move the patient to the Orthodontaire department and create a transfer record. The transfer may require approval.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseTransferDialog} color="primary">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmedTransfer} 
+            color="secondary" 
+            variant="contained"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Processing...' : 'Transfer'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
         <DialogTitle>{newPatient.id ? 'Edit Patient' : 'Add New Patient'}</DialogTitle>
@@ -766,6 +986,38 @@ const Patients: React.FC = () => {
           </DialogActions>
         </form>
       </Dialog>
+      
+      {/* Toast notification for providing user feedback */}
+      <Snackbar
+        open={feedbackOpen}
+        autoHideDuration={6000}
+        onClose={handleCloseFeedback}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        sx={{
+          '& .MuiPaper-root': {
+            backgroundColor: 
+              feedbackType === 'success' ? 'success.main' : 
+              feedbackType === 'error' ? 'error.main' : 'info.main',
+            color: 'white',
+            display: 'flex',
+            alignItems: 'center',
+            pr: 1
+          }
+        }}
+        message={
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {feedbackType === 'success' && <CheckCircle size={20} />}
+            {feedbackType === 'error' && <AlertCircle size={20} />}
+            {feedbackType === 'info' && <AlertCircle size={20} />}
+            {feedbackMessage}
+          </Box>
+        }
+        action={
+          <IconButton size="small" color="inherit" onClick={handleCloseFeedback}>
+            <X size={18} />
+          </IconButton>
+        }
+      />
     </Box>
   );
 };

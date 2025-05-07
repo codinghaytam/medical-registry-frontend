@@ -5,7 +5,7 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   TablePagination, Paper, IconButton, Menu, MenuItem, Dialog,
   DialogTitle, DialogContent, DialogActions, FormControl, InputLabel,
-  Select, SelectChangeEvent, useTheme, CircularProgress, Alert
+  Select, SelectChangeEvent, useTheme, CircularProgress, Alert, Tooltip
 } from '@mui/material';
 import { Search, Plus, MoreVertical, Edit, Trash2, User, RefreshCw } from 'lucide-react';
 import { userService, UserData } from '../services/userService';
@@ -16,6 +16,9 @@ const Users: React.FC = () => {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
   const [openDialog, setOpenDialog] = useState(false);
+  // Add delete confirmation dialog state
+  const [openDeleteDialog, setOpenDeleteDialog] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<string | null>(null);
   const [users, setUsers] = useState<UserData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -131,6 +134,38 @@ const Users: React.FC = () => {
     }
   };
 
+  // Show delete confirmation dialog
+  const handleConfirmDelete = (id: string) => {
+    setUserToDelete(id);
+    setOpenDeleteDialog(true);
+    handleMenuClose();
+  };
+
+  // Close delete confirmation dialog
+  const handleCloseDeleteDialog = () => {
+    setOpenDeleteDialog(false);
+    setUserToDelete(null);
+  };
+
+  // Proceed with delete after confirmation
+  const handleConfirmedDelete = async () => {
+    if (!userToDelete) return;
+    
+    setIsLoading(true);
+    try {
+      await userService.delete(userToDelete);
+      // Refresh users list after deletion
+      fetchUsers();
+    } catch (error: any) {
+      console.error('Failed to delete user:', error);
+      setNetworkError(error.message || "Failed to delete user");
+    } finally {
+      setIsLoading(false);
+      setOpenDeleteDialog(false);
+      setUserToDelete(null);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     setIsLoading(true);
     try {
@@ -187,15 +222,26 @@ const Users: React.FC = () => {
         <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
           Users
         </Typography>
-        <Button 
-          variant="contained" 
-          startIcon={<Plus size={18} />}
-          sx={{ borderRadius: 2 }}
-          onClick={handleOpenDialog}
-          disabled={isLoading}
-        >
-          Add New User
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Tooltip title="Refresh users list">
+            <IconButton 
+              size="small" 
+              onClick={fetchUsers}
+              disabled={isLoading}
+            >
+              <RefreshCw size={16} />
+            </IconButton>
+          </Tooltip>
+          <Button 
+            variant="outlined" 
+            size="small" 
+            startIcon={<Plus size={16} />}
+            onClick={handleOpenDialog}
+            disabled={isLoading}
+          >
+            Add User
+          </Button>
+        </Box>
       </Box>
 
       {/* Search Card */}
@@ -328,7 +374,7 @@ const Users: React.FC = () => {
           Edit
         </MenuItem>
         <MenuItem 
-          onClick={() => selectedUserId && handleDelete(selectedUserId.toString())} 
+          onClick={() => selectedUserId && handleConfirmDelete(selectedUserId.toString())} 
           sx={{ color: 'error.main' }}
           disabled={isLoading}
         >
@@ -336,6 +382,36 @@ const Users: React.FC = () => {
           Delete
         </MenuItem>
       </Menu>
+
+      {/* Delete confirmation dialog */}
+      <Dialog
+        open={openDeleteDialog}
+        onClose={handleCloseDeleteDialog}
+        aria-labelledby="delete-dialog-title"
+        aria-describedby="delete-dialog-description"
+      >
+        <DialogTitle id="delete-dialog-title">
+          Confirm Deletion
+        </DialogTitle>
+        <DialogContent>
+          <Typography id="delete-dialog-description">
+            Are you sure you want to delete this user? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDeleteDialog} color="primary">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmedDelete} 
+            color="error" 
+            variant="contained"
+            disabled={isLoading}
+          >
+            {isLoading ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Add User Dialog */}
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
