@@ -925,13 +925,15 @@ const Seances: React.FC = () => {
           <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
             {/* Refresh button for all users */}
             <Tooltip title="Refresh data">
-              <IconButton 
-                onClick={handleRefreshClick}
-                size="small" 
-                disabled={isLoading}
-              >
-                <RefreshCw size={18} />
-              </IconButton>
+            <Button 
+              variant="outlined" 
+              size="small"
+              startIcon={<RefreshCw size={16} />}
+              onClick={handleRefreshClick}
+              disabled={isLoading}
+            >
+              Refresh
+            </Button>
             </Tooltip>
             
           </Box>

@@ -794,13 +794,16 @@ const Consultations: React.FC = () => {
           <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 1 }}>
             {/* Refresh button for all users */}
             <Tooltip title="Refresh data">
-              <IconButton 
-                size="small" 
-                onClick={fetchData}
-                disabled={isLoading}
-              >
-                <RefreshCw size={18} />
-              </IconButton>
+             
+              <Button 
+              variant="outlined" 
+              size="small"
+              startIcon={<RefreshCw size={16} />}
+              onClick={fetchData}
+              disabled={isLoading}
+            >
+              Refresh
+            </Button>
             </Tooltip>
             
           </Box>

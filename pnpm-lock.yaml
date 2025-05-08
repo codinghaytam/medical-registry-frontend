@@ -38,6 +38,9 @@ importers:
       '@tauri-apps/plugin-opener':
         specifier: ^2
         version: 2.2.6
+      '@tauri-apps/plugin-process':
+        specifier: ~2
+        version: 2.2.1
       '@toolpad/core':
         specifier: ^0.13.0
         version: 0.13.0(e833f5d329f1ef6a0860dc62e87b6461)
@@ -63,7 +66,7 @@ importers:
         specifier: ^6.22.1
         version: 6.30.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       tauri-plugin-app-exit-api:
-        specifier: '0.1'
+        specifier: ~0.1.1
         version: 0.1.1
     devDependencies:
       '@tauri-apps/cli':
@@ -894,6 +897,9 @@ packages:
 
   '@tauri-apps/plugin-opener@2.2.6':
     resolution: {integrity: sha512-bSdkuP71ZQRepPOn8BOEdBKYJQvl6+jb160QtJX/i2H9BF6ZySY/kYljh76N2Ne5fJMQRge7rlKoStYQY5Jq1w==}
+
+  '@tauri-apps/plugin-process@2.2.1':
+    resolution: {integrity: sha512-cF/k8J+YjjuowhNG1AboHNTlrGiOwgX5j6NzsX6WFf9FMzyZUchkCgZMxCdSE5NIgFX0vvOgLQhODFJgbMenLg==}
 
   '@toolpad/core@0.13.0':
     resolution: {integrity: sha512-fnl8sG8XGq+16cQ1uspNkCsVtwtC0979TDCCIJPUXyPGCDU9m8d2QyxmQL6MNqFT1KnfLZkmsFnknht6qlxy0Q==}
@@ -2626,6 +2632,10 @@ snapshots:
       '@tauri-apps/api': 2.5.0
 
   '@tauri-apps/plugin-opener@2.2.6':
+    dependencies:
+      '@tauri-apps/api': 2.5.0
+
+  '@tauri-apps/plugin-process@2.2.1':
     dependencies:
       '@tauri-apps/api': 2.5.0
 

@@ -2169,6 +2169,7 @@ dependencies = [
  "tauri-plugin-app-exit",
  "tauri-plugin-http",
  "tauri-plugin-opener",
+ "tauri-plugin-process",
 ]
 
 [[package]]
@@ -4040,6 +4041,16 @@ dependencies = [
  "url",
  "windows 0.60.0",
  "zbus",
+]
+
+[[package]]
+name = "tauri-plugin-process"
+version = "2.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57da5888533e802b6206b9685091f8714aa1f5266dc80051a82388449558b773"
+dependencies = [
+ "tauri",
+ "tauri-plugin",
 ]
 
 [[package]]

@@ -1,5 +1,6 @@
 import { fetch } from '@tauri-apps/plugin-http';
 import { MedecinData } from './seanceService';
+import { withAuthHeader } from './authService';
 
 const BASE_URL = 'http://localhost:3000';
 
@@ -9,18 +10,17 @@ export interface UserData {
   email: string;
   firstName?: string;
   lastName?: string;
-  enabled: boolean;
-  roles?: string[];
+  role: string;
 }
 
 export const userService = {
   getAll: async () => {
-    const response = await fetch(`${BASE_URL}/users`);
+    const response = await fetch(`${BASE_URL}/users`, { headers: withAuthHeader().headers });
     return response.json();
   },
 
   create: async (data: Omit<UserData, 'id' | 'enabled'>) => {
-    const response = await fetch(`${BASE_URL}/users`, {
+    const response = await fetch(`${BASE_URL}/users`, { ...withAuthHeader(),
       method: 'POST',
       body: JSON.stringify(data),
       headers: { 'Content-Type': 'application/json' },
@@ -29,7 +29,7 @@ export const userService = {
   },
 
   update: async (id: string, data: Partial<UserData>) => {
-    const response = await fetch(`${BASE_URL}/users/${id}`, {
+    const response = await fetch(`${BASE_URL}/users/${id}`, { ...withAuthHeader(),
       method: 'PUT',
       body: JSON.stringify(data),
       headers: {
@@ -40,13 +40,13 @@ export const userService = {
   },
 
   delete: async (id: string) => {
-    await fetch(`${BASE_URL}/users/${id}`, {
+    await fetch(`${BASE_URL}/users/${id}`, { ...withAuthHeader(),
       method: 'DELETE',
     });
   },
 
   getMedecins: async (): Promise<MedecinData[]> => {
-    const response = await fetch(`${BASE_URL}/medecin`);
+    const response = await fetch(`${BASE_URL}/medecin`, { headers: withAuthHeader().headers });
     return response.json();
   }
 };

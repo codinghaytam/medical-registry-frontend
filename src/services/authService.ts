@@ -189,4 +189,20 @@ class AuthService {
 }
 
 export const authService = new AuthService();
+
+/**
+ * Utility function to add authorization header to fetch requests
+ * @param options - The fetch options to modify
+ * @returns Modified fetch options with authorization header
+ */
+export const withAuthHeader = (options: RequestInit = {}): RequestInit => {
+  const token = authService.getToken();
+  if (token?.access_token) {
+    const headers = new Headers(options.headers || {});
+    headers.set('Authorization', `Bearer ${token.access_token}`);
+    return { ...options, headers: Object.fromEntries(headers.entries()) };
+  }
+  return options;
+};
+
 export default authService;

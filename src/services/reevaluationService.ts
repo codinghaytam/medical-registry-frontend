@@ -1,4 +1,5 @@
 import { fetch } from '@tauri-apps/plugin-http';
+import { withAuthHeader } from './authService';
 
 const BASE_URL = 'http://localhost:3000';
 
@@ -18,7 +19,7 @@ export const reevaluationService = {
   },
 
   getById: async (id: string) => {
-    const response = await fetch(`${BASE_URL}/reevaluation/${id}`);
+    const response = await fetch(`${BASE_URL}/reevaluation/${id}`, { headers: withAuthHeader().headers });
     return response.json();
   },
 
@@ -36,7 +37,7 @@ export const reevaluationService = {
           `[File: ${(pair[1] as File).name}, ${(pair[1] as File).size} bytes]` : pair[1]);
       }
 
-      const response = await fetch(`${BASE_URL}/reevaluation`, {
+      const response = await fetch(`${BASE_URL}/reevaluation`, { ...withAuthHeader(),
         method: 'POST',
         // Do NOT set Content-Type header when sending FormData
         // The browser will set the proper multipart/form-data boundary
@@ -74,7 +75,7 @@ export const reevaluationService = {
           `[File: ${(pair[1] as File).name}, ${(pair[1] as File).size} bytes]` : pair[1]);
       }
 
-      const response = await fetch(`${BASE_URL}/reevaluation/${id}`, {
+      const response = await fetch(`${BASE_URL}/reevaluation/${id}`, { ...withAuthHeader(),
         method: 'PUT',
         // Do NOT set Content-Type header when sending FormData
         body: data,
@@ -104,7 +105,7 @@ export const reevaluationService = {
   },
 
   delete: async (id: string) => {
-    await fetch(`${BASE_URL}/reevaluation/${id}`, {
+    await fetch(`${BASE_URL}/reevaluation/${id}`, { ...withAuthHeader(),
       method: 'DELETE',
     });
   }

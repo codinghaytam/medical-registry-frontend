@@ -229,7 +229,6 @@ const Users: React.FC = () => {
               onClick={fetchUsers}
               disabled={isLoading}
             >
-              <RefreshCw size={16} />
             </IconButton>
           </Tooltip>
           <Button 
@@ -286,7 +285,6 @@ const Users: React.FC = () => {
                 <TableCell>Email</TableCell>
                 <TableCell>Role</TableCell>
                 <TableCell>Username</TableCell>
-                <TableCell>Status</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -318,9 +316,8 @@ const Users: React.FC = () => {
                         </Box>
                       </TableCell>
                       <TableCell>{user.email}</TableCell>
-                      <TableCell>{user.roles?.join(', ') || 'No roles'}</TableCell>
+                      <TableCell>{user.role || 'No roles'}</TableCell>
                       <TableCell>{user.username}</TableCell>
-                      <TableCell>{user.enabled ? 'Active' : 'Inactive'}</TableCell>
                       <TableCell align="right">
                         <IconButton 
                           size="small" 

@@ -28,14 +28,14 @@ export default function LoginPage() {
 
     const urlencoded = new URLSearchParams();
     urlencoded.append("grant_type", "password");
-    urlencoded.append("client_id", "medical-registry");
-    urlencoded.append("scope", "email");
+    urlencoded.append("client_id", import.meta.env.VITE_KEYCLOAK_CLIENT_ID);
+    urlencoded.append("scope", import.meta.env.VITE_KEYCLOAK_SCOPE);
     urlencoded.append("username", email);
     urlencoded.append("password", password);
-    urlencoded.append("client_secret", "yMPWLw3KpQse36zns4HwHdS571Vz3z6W");
+    urlencoded.append("client_secret", import.meta.env.VITE_KEYCLOAK_CLIENT_SECRET);
 
     try {
-      const response = await fetch("http://localhost:9090/realms/myRealm/protocol/openid-connect/token", {
+      const response = await fetch(`${import.meta.env.VITE_KEYCLOAK_URL}/realms/${import.meta.env.VITE_KEYCLOAK_REALM}/protocol/openid-connect/token`, {
         method: "POST",
         headers: myHeaders,
         body: urlencoded.toString(),
